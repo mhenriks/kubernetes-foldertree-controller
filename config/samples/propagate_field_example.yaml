@@ -1,0 +1,198 @@
+# Example demonstrating the new propagate field in RoleBindingTemplates
+# This example shows how to control inheritance of permissions in hierarchical structures
+
+apiVersion: rbac.kubevirt.io/v1alpha1
+kind: FolderTree
+metadata:
+  name: propagate-example
+spec:
+  # Define the organizational hierarchy
+  tree:
+    name: organization
+    subfolders:
+      - name: platform-team
+        subfolders:
+          - name: monitoring
+          - name: security
+      - name: application-teams
+        subfolders:
+          - name: web-app
+          - name: api-service
+
+  # Define folders with different propagation behaviors
+  folders:
+    # Organization-wide permissions
+    - name: organization
+      roleBindingTemplates:
+        # Emergency access should propagate everywhere
+        - name: emergency-access
+          propagate: true # Explicit true - inherits to all children
+          subjects:
+            - kind: Group
+              name: incident-response-team
+              apiGroup: rbac.authorization.k8s.io
+          roleRef:
+            kind: ClusterRole
+            name: admin
+            apiGroup: rbac.authorization.k8s.io
+
+        # Read-only auditors should see everything
+        - name: audit-access
+          # No propagate field specified - defaults to true
+          subjects:
+            - kind: Group
+              name: security-auditors
+              apiGroup: rbac.authorization.k8s.io
+          roleRef:
+            kind: ClusterRole
+            name: view
+            apiGroup: rbac.authorization.k8s.io
+
+    # Platform team with mixed propagation
+    - name: platform-team
+      roleBindingTemplates:
+        # Platform admins should have access to monitoring and security
+        - name: platform-admins
+          propagate: true
+          subjects:
+            - kind: Group
+              name: platform-engineers
+              apiGroup: rbac.authorization.k8s.io
+          roleRef:
+            kind: ClusterRole
+            name: admin
+            apiGroup: rbac.authorization.k8s.io
+
+        # Secret management should NOT propagate to specialized teams
+        - name: secret-management
+          propagate: false # Does not inherit to monitoring/security teams
+          subjects:
+            - kind: Group
+              name: platform-leads
+              apiGroup: rbac.authorization.k8s.io
+          roleRef:
+            kind: ClusterRole
+            name: admin
+            apiGroup: rbac.authorization.k8s.io
+
+    # Monitoring team inherits: emergency-access + audit-access + platform-admins
+    # Does NOT inherit: secret-management (propagate: false)
+    - name: monitoring
+      namespaces: ["monitoring", "prometheus", "grafana"]
+      roleBindingTemplates:
+        - name: monitoring-specialists
+          propagate: false # Monitoring expertise is specific to this team
+          subjects:
+            - kind: Group
+              name: sre-monitoring
+              apiGroup: rbac.authorization.k8s.io
+          roleRef:
+            kind: ClusterRole
+            name: admin
+            apiGroup: rbac.authorization.k8s.io
+
+    # Security team inherits: emergency-access + audit-access + platform-admins
+    # Does NOT inherit: secret-management (propagate: false)
+    - name: security
+      namespaces:
+        ["security-scanning", "policy-engine", "admission-controllers"]
+      roleBindingTemplates:
+        - name: security-specialists
+          propagate: false # Security permissions are specialized
+          subjects:
+            - kind: Group
+              name: security-engineers
+              apiGroup: rbac.authorization.k8s.io
+          roleRef:
+            kind: ClusterRole
+            name: admin
+            apiGroup: rbac.authorization.k8s.io
+
+    # Application teams
+    - name: application-teams
+      roleBindingTemplates:
+        # All app teams get basic developer access
+        - name: developer-access
+          propagate: true
+          subjects:
+            - kind: Group
+              name: all-developers
+              apiGroup: rbac.authorization.k8s.io
+          roleRef:
+            kind: ClusterRole
+            name: edit
+            apiGroup: rbac.authorization.k8s.io
+
+        # Senior architect permissions don't automatically inherit
+        - name: architect-access
+          propagate: false
+          subjects:
+            - kind: Group
+              name: senior-architects
+              apiGroup: rbac.authorization.k8s.io
+          roleRef:
+            kind: ClusterRole
+            name: admin
+            apiGroup: rbac.authorization.k8s.io
+
+    # Web app team inherits: emergency-access + audit-access + developer-access
+    # Does NOT inherit: architect-access (propagate: false)
+    - name: web-app
+      namespaces: ["web-app-prod", "web-app-stage", "web-app-dev"]
+      roleBindingTemplates:
+        - name: web-team-lead
+          propagate: false # Team lead permissions are team-specific
+          subjects:
+            - kind: User
+              name: web-team-lead
+              apiGroup: rbac.authorization.k8s.io
+          roleRef:
+            kind: ClusterRole
+            name: admin
+            apiGroup: rbac.authorization.k8s.io
+
+    # API service team inherits: emergency-access + audit-access + developer-access
+    # Does NOT inherit: architect-access (propagate: false)
+    - name: api-service
+      namespaces: ["api-prod", "api-stage", "api-dev"]
+      roleBindingTemplates:
+        - name: api-team-lead
+          propagate: false # Team lead permissions are team-specific
+          subjects:
+            - kind: User
+              name: api-team-lead
+              apiGroup: rbac.authorization.k8s.io
+          roleRef:
+            kind: ClusterRole
+            name: admin
+            apiGroup: rbac.authorization.k8s.io
+
+---
+# Example showing backward compatibility - existing FolderTrees work unchanged
+apiVersion: rbac.kubevirt.io/v1alpha1
+kind: FolderTree
+metadata:
+  name: backward-compatible
+spec:
+  tree:
+    name: root
+    subfolders:
+      - name: child
+
+  folders:
+    - name: root
+      roleBindingTemplates:
+        - name: legacy-template
+          # No propagate field - defaults to true (maintains existing behavior)
+          subjects:
+            - kind: Group
+              name: legacy-admins
+              apiGroup: rbac.authorization.k8s.io
+          roleRef:
+            kind: ClusterRole
+            name: admin
+            apiGroup: rbac.authorization.k8s.io
+
+    - name: child
+      namespaces: ["child-namespace"]
+      # Will inherit legacy-template because propagate defaults to true

@@ -1,0 +1,6 @@
+# Kustomization for CRDs
+resources:
+- bases/rbac.kubevirt.io_foldertrees.yaml
+
+# No patches needed - Python script (hack/fix-recursive-crd.py) handles CRD fixes
+# during the manifests generation step

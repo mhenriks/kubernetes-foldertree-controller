@@ -1,0 +1,32 @@
+# Additional RBAC permissions for the controller to manage common ClusterRoles
+# The controller needs these permissions to create RoleBindings that reference them
+#
+# SECURITY NOTE: This grants the controller the same permissions as the 'admin' ClusterRole
+# in your KubeVirt cluster. In production, you should restrict this to only the permissions
+# your FolderTrees actually need. The controller can only grant permissions it has itself.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: foldertree-controller-permissions
+rules:
+# Grant the controller permissions equivalent to the 'admin' ClusterRole
+# This allows it to create RoleBindings that reference 'admin', 'edit', 'view', etc.
+- apiGroups: ["*"]
+  resources: ["*"]
+  verbs: ["*"]
+- nonResourceURLs: ["*"]
+  verbs: ["*"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: foldertree-controller-permissions
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: foldertree-controller-permissions
+subjects:
+- kind: ServiceAccount
+  name: folder-controller-manager
+  namespace: folders-system

@@ -1,0 +1,275 @@
+# Examples showing enhanced webhook validation for inline role binding templates architecture
+
+---
+# Example 1: Invalid names (not DNS-1123 compliant)
+apiVersion: rbac.kubevirt.io/v1alpha1
+kind: FolderTree
+metadata:
+  name: invalid-names
+spec:
+  tree:
+    name: "Root_Folder" # ERROR: Uppercase and underscore not allowed
+    subfolders:
+      - name: "prod-" # ERROR: Cannot end with hyphen
+      - name: "123invalid" # ERROR: Cannot start with number
+  folders:
+    - name: "Invalid_Folder" # ERROR: Underscore not allowed
+      namespaces: ["Invalid_Namespace"] # ERROR: Underscore not allowed
+      roleBindingTemplates:
+        - name: "Invalid_Template" # ERROR: Underscore not allowed
+          subjects:
+            - kind: User
+              name: test-user
+              apiGroup: rbac.authorization.k8s.io
+          roleRef:
+            kind: ClusterRole
+            name: admin
+            apiGroup: rbac.authorization.k8s.io
+
+---
+# Example 2: Duplicate names
+apiVersion: rbac.kubevirt.io/v1alpha1
+kind: FolderTree
+metadata:
+  name: duplicate-names
+spec:
+  tree:
+    name: root
+    subfolders:
+      - name: prod
+      - name: prod # ERROR: Duplicate TreeNode name
+  folders:
+    - name: folder1
+      namespaces: [ns1]
+      roleBindingTemplates:
+        - name: template1
+          subjects:
+            - kind: User
+              name: user1
+              apiGroup: rbac.authorization.k8s.io
+          roleRef:
+            kind: ClusterRole
+            name: admin
+            apiGroup: rbac.authorization.k8s.io
+    - name: folder1 # ERROR: Duplicate folder name
+      namespaces: [ns2]
+      roleBindingTemplates:
+        - name: template2
+          subjects:
+            - kind: User
+              name: user2
+              apiGroup: rbac.authorization.k8s.io
+          roleRef:
+            kind: ClusterRole
+            name: view
+            apiGroup: rbac.authorization.k8s.io
+
+---
+# Example 3: Duplicate namespace assignments
+apiVersion: rbac.kubevirt.io/v1alpha1
+kind: FolderTree
+metadata:
+  name: duplicate-namespaces
+spec:
+  folders:
+    - name: folder1
+      namespaces: [shared-ns] # ERROR: Namespace assigned to multiple folders
+      roleBindingTemplates:
+        - name: template1
+          subjects:
+            - kind: User
+              name: user1
+              apiGroup: rbac.authorization.k8s.io
+          roleRef:
+            kind: ClusterRole
+            name: admin
+            apiGroup: rbac.authorization.k8s.io
+    - name: folder2
+      namespaces: [shared-ns] # ERROR: Duplicate namespace assignment
+      roleBindingTemplates:
+        - name: template2
+          subjects:
+            - kind: User
+              name: user2
+              apiGroup: rbac.authorization.k8s.io
+          roleRef:
+            kind: ClusterRole
+            name: view
+            apiGroup: rbac.authorization.k8s.io
+
+---
+# Example 4: Duplicate role binding template names within a folder
+apiVersion: rbac.kubevirt.io/v1alpha1
+kind: FolderTree
+metadata:
+  name: duplicate-templates
+spec:
+  folders:
+    - name: test-folder
+      namespaces: [test-ns]
+      roleBindingTemplates:
+        - name: duplicate-template
+          subjects:
+            - kind: User
+              name: user1
+              apiGroup: rbac.authorization.k8s.io
+          roleRef:
+            kind: ClusterRole
+            name: admin
+            apiGroup: rbac.authorization.k8s.io
+        - name: duplicate-template # ERROR: Duplicate template name within folder
+          subjects:
+            - kind: User
+              name: user2
+              apiGroup: rbac.authorization.k8s.io
+          roleRef:
+            kind: ClusterRole
+            name: view
+            apiGroup: rbac.authorization.k8s.io
+
+---
+# Example 5: Invalid RBAC structure
+apiVersion: rbac.kubevirt.io/v1alpha1
+kind: FolderTree
+metadata:
+  name: invalid-rbac
+spec:
+  folders:
+    - name: test-folder
+      namespaces: [test-ns]
+      roleBindingTemplates:
+        - name: invalid-template
+          subjects: [] # ERROR: Empty subjects array
+          roleRef:
+            kind: ClusterRole
+            name: admin
+            apiGroup: rbac.authorization.k8s.io
+        - name: invalid-apigroup
+          subjects:
+            - kind: User
+              name: test-user
+              apiGroup: wrong.api.group # ERROR: Wrong apiGroup for User
+          roleRef:
+            kind: ClusterRole
+            name: admin
+            apiGroup: wrong.api.group # ERROR: Wrong apiGroup for roleRef
+
+---
+# Example 6: No namespace assignments (should fail business logic validation)
+apiVersion: rbac.kubevirt.io/v1alpha1
+kind: FolderTree
+metadata:
+  name: no-namespaces
+spec:
+  folders:
+    - name: orphaned-folder
+      # ERROR: No namespaces assigned anywhere in the FolderTree
+      roleBindingTemplates:
+        - name: orphaned-template
+          subjects:
+            - kind: User
+              name: test-user
+              apiGroup: rbac.authorization.k8s.io
+          roleRef:
+            kind: ClusterRole
+            name: admin
+            apiGroup: rbac.authorization.k8s.io
+
+---
+# Example 7: Inheritance conflicts (role binding template names)
+apiVersion: rbac.kubevirt.io/v1alpha1
+kind: FolderTree
+metadata:
+  name: inheritance-conflicts
+spec:
+  tree:
+    name: parent
+    subfolders:
+      - name: child
+  folders:
+    - name: parent
+      roleBindingTemplates:
+        - name: admin-template
+          subjects:
+            - kind: Group
+              name: parent-admins
+              apiGroup: rbac.authorization.k8s.io
+          roleRef:
+            kind: ClusterRole
+            name: admin
+            apiGroup: rbac.authorization.k8s.io
+    - name: child
+      roleBindingTemplates:
+        - name: admin-template # ERROR: Conflicts with inherited template from parent
+          subjects:
+            - kind: Group
+              name: child-admins
+              apiGroup: rbac.authorization.k8s.io
+          roleRef:
+            kind: ClusterRole
+            name: edit
+            apiGroup: rbac.authorization.k8s.io
+      namespaces: ["child-ns"]
+
+---
+# Example 8: Valid structure for comparison
+apiVersion: rbac.kubevirt.io/v1alpha1
+kind: FolderTree
+metadata:
+  name: valid-example
+spec:
+  tree:
+    name: root
+    subfolders:
+      - name: prod
+        subfolders:
+          - name: prod-app-1
+      - name: stage
+  folders:
+    - name: root
+      roleBindingTemplates:
+        - name: admin
+          subjects:
+            - kind: Group
+              name: operations
+              apiGroup: rbac.authorization.k8s.io
+          roleRef:
+            kind: ClusterRole
+            name: admin
+            apiGroup: rbac.authorization.k8s.io
+    - name: prod
+      roleBindingTemplates:
+        - name: prod-admin
+          subjects:
+            - kind: Group
+              name: prod-ops
+              apiGroup: rbac.authorization.k8s.io
+          roleRef:
+            kind: ClusterRole
+            name: admin
+            apiGroup: rbac.authorization.k8s.io
+      namespaces: ["production"]
+    - name: prod-app-1
+      roleBindingTemplates:
+        - name: prod-app1
+          subjects:
+            - kind: Group
+              name: prod-ops-app1
+              apiGroup: rbac.authorization.k8s.io
+          roleRef:
+            kind: ClusterRole
+            name: admin
+            apiGroup: rbac.authorization.k8s.io
+      namespaces: ["production-app-1"]
+    - name: stage
+      roleBindingTemplates:
+        - name: staging
+          subjects:
+            - kind: Group
+              name: stage-admin
+              apiGroup: rbac.authorization.k8s.io
+          roleRef:
+            kind: ClusterRole
+            name: admin
+            apiGroup: rbac.authorization.k8s.io
+      namespaces: ["staging"]

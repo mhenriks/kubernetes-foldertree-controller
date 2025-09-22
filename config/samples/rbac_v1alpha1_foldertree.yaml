@@ -1,0 +1,74 @@
+apiVersion: rbac.kubevirt.io/v1alpha1
+kind: FolderTree
+metadata:
+  name: tree1
+spec:
+  tree:
+    name: root
+    subfolders:
+      - name: prod
+        subfolders:
+          - name: prod-app-1
+      - name: stage
+  folders:
+    - name: root
+      roleBindingTemplates:
+        - name: admin
+          propagate: true # Enable inheritance to all child folders
+          subjects:
+            - kind: Group
+              name: operations
+              apiGroup: rbac.authorization.k8s.io
+          roleRef:
+            kind: ClusterRole
+            name: admin
+            apiGroup: rbac.authorization.k8s.io
+    - name: prod
+      roleBindingTemplates:
+        - name: prod-admin
+          propagate: true # Enable inheritance to prod child folders
+          subjects:
+            - kind: Group
+              name: prod-ops
+              apiGroup: rbac.authorization.k8s.io
+          roleRef:
+            kind: ClusterRole
+            name: admin
+            apiGroup: rbac.authorization.k8s.io
+      namespaces: ["production-secret"]
+    - name: prod-app-1
+      roleBindingTemplates:
+        - name: prod-app1
+          subjects:
+            - kind: Group
+              name: prod-ops-app1
+              apiGroup: rbac.authorization.k8s.io
+          roleRef:
+            kind: ClusterRole
+            name: admin
+            apiGroup: rbac.authorization.k8s.io
+      namespaces: ["production-app-1"]
+    - name: stage
+      roleBindingTemplates:
+        - name: staging
+          subjects:
+            - kind: Group
+              name: stage-admin
+              apiGroup: rbac.authorization.k8s.io
+          roleRef:
+            kind: ClusterRole
+            name: admin
+            apiGroup: rbac.authorization.k8s.io
+      namespaces: ["staging"]
+    - name: treeless
+      roleBindingTemplates:
+        - name: fred-admin
+          subjects:
+            - kind: User
+              name: Fred
+              apiGroup: rbac.authorization.k8s.io
+          roleRef:
+            kind: ClusterRole
+            name: admin
+            apiGroup: rbac.authorization.k8s.io
+      namespaces: ["freds-namespace"]

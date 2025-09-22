@@ -1,0 +1,55 @@
+apiVersion: rbac.kubevirt.io/v1alpha1
+kind: FolderTree
+metadata:
+  name: tree-with-empty-permissions
+spec:
+  # Define the hierarchical structure
+  tree:
+    name: root
+    subfolders:
+      - name: prod
+      - name: staging
+      - name: dev
+      - name: shared
+  # Define folder data with various role binding template scenarios
+  folders:
+    - name: root
+      roleBindingTemplates:
+        - name: admin
+          subjects:
+            - kind: Group
+              name: admins
+              apiGroup: rbac.authorization.k8s.io
+          roleRef:
+            kind: ClusterRole
+            name: admin
+            apiGroup: rbac.authorization.k8s.io
+    - name: prod
+      namespaces:
+        - production-app-1
+        - production-app-2
+      roleBindingTemplates:
+        - name: prod-admin
+          subjects:
+            - kind: Group
+              name: production-team
+              apiGroup: rbac.authorization.k8s.io
+          roleRef:
+            kind: ClusterRole
+            name: admin
+            apiGroup: rbac.authorization.k8s.io
+    - name: staging
+      namespaces:
+        - staging-app-1
+        - staging-app-2
+      # No roleBindingTemplates specified - only inherits cluster-admin from root
+    - name: dev
+      namespaces:
+        - dev-playground
+      roleBindingTemplates: [] # Explicitly empty role binding templates array - also valid
+    - name: shared
+      namespaces:
+        - shared-resources
+        - shared-monitoring
+      # This folder groups namespaces but adds no additional role binding templates
+      # Namespaces will only get cluster-admin from root folder

@@ -1,0 +1,302 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.18.0
+  name: foldertrees.rbac.kubevirt.io
+spec:
+  group: rbac.kubevirt.io
+  names:
+    kind: FolderTree
+    listKind: FolderTreeList
+    plural: foldertrees
+    singular: foldertree
+  scope: Cluster
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: 'FolderTree is the Schema for the foldertrees API.
+
+          FolderTree allows grouping Kubernetes namespaces into a hierarchical structure
+
+          with inherited RBAC permissions. It uses a split structure design where:
+
+          - spec.tree defines the hierarchy (TreeNode with parent-child relationships)
+
+          - spec.folders[] contains the data (inline role binding templates and namespace
+          assignments)
+
+          The controller creates RoleBindings in namespaces based on folder role binding
+          templates
+
+          and inherits role binding templates from parent folders in the tree structure.'
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object.
+
+              Servers should convert recognized schemas to the latest internal value,
+              and
+
+              may reject unrecognized values.
+
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents.
+
+              Servers may infer this from the endpoint the client submits requests
+              to.
+
+              Cannot be updated.
+
+              In CamelCase.
+
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of FolderTree
+            properties:
+              folders:
+                description: 'Folders is a flat list of folder data containing inline
+                  role binding templates and namespace assignments.
+
+                  Folders can exist independently (standalone) or be referenced by
+                  the Tree.
+
+                  Folder names must be unique within a FolderTree.'
+                items:
+                  description: 'Folder represents folder data without hierarchical
+                    structure.
+
+                    Folders contain the actual role binding templates and namespace
+                    assignments.
+
+                    Folder names are referenced by TreeNode names to establish relationships.'
+                  properties:
+                    name:
+                      description: Name is the unique identifier for this folder
+                      minLength: 1
+                      type: string
+                    namespaces:
+                      description: Namespaces is a list of Kubernetes namespaces that
+                        belong to this folder
+                      items:
+                        type: string
+                      type: array
+                    roleBindingTemplates:
+                      description: RoleBindingTemplates is a list of inline RBAC templates
+                        that apply to this folder
+                      items:
+                        description: 'RoleBindingTemplate defines an inline RBAC template
+                          for a folder.
+
+                          RoleBindingTemplates contain the subjects and roleRef needed
+                          to create RoleBindings.'
+                        properties:
+                          name:
+                            description: Name is the unique identifier for this role
+                              binding template
+                            minLength: 1
+                            type: string
+                          propagate:
+                            default: false
+                            description: 'Propagate determines whether this role binding
+                              template should be inherited
+
+                              by child folders in the hierarchy. If true, child folders
+                              will inherit this
+
+                              template. If false or unset (default), this template
+                              applies only to the current folder.'
+                            type: boolean
+                          roleRef:
+                            description: 'RoleRef can only reference a ClusterRole
+                              in the global namespace.
+
+                              If the RoleRef cannot be resolved, the Authorizer must
+                              return an error.'
+                            properties:
+                              apiGroup:
+                                description: APIGroup is the group for the resource
+                                  being referenced
+                                type: string
+                              kind:
+                                description: Kind is the type of resource being referenced
+                                type: string
+                              name:
+                                description: Name is the name of resource being referenced
+                                type: string
+                            required:
+                            - apiGroup
+                            - kind
+                            - name
+                            type: object
+                            x-kubernetes-map-type: atomic
+                          subjects:
+                            description: Subjects holds references to the objects
+                              the role applies to.
+                            items:
+                              description: 'Subject contains a reference to the object
+                                or user identities a role binding applies to.  This
+                                can either hold a direct API object reference,
+
+                                or a value for non-objects such as user and group
+                                names.'
+                              properties:
+                                apiGroup:
+                                  description: 'APIGroup holds the API group of the
+                                    referenced subject.
+
+                                    Defaults to "" for ServiceAccount subjects.
+
+                                    Defaults to "rbac.authorization.k8s.io" for User
+                                    and Group subjects.'
+                                  type: string
+                                kind:
+                                  description: 'Kind of object being referenced. Values
+                                    defined by this API group are "User", "Group",
+                                    and "ServiceAccount".
+
+                                    If the Authorizer does not recognized the kind
+                                    value, the Authorizer should report an error.'
+                                  type: string
+                                name:
+                                  description: Name of the object being referenced.
+                                  type: string
+                                namespace:
+                                  description: 'Namespace of the referenced object.  If
+                                    the object kind is non-namespace, such as "User"
+                                    or "Group", and this value is not empty
+
+                                    the Authorizer should report an error.'
+                                  type: string
+                              required:
+                              - kind
+                              - name
+                              type: object
+                              x-kubernetes-map-type: atomic
+                            minItems: 1
+                            type: array
+                        required:
+                        - name
+                        - roleRef
+                        - subjects
+                        type: object
+                      type: array
+                  required:
+                  - name
+                  type: object
+                type: array
+              tree:
+                description: 'Tree defines the hierarchical structure with parent-child
+                  relationships.
+
+                  TreeNode names must reference Folder names to establish the data
+                  association.'
+                properties:
+                  name:
+                    description: Name is the unique identifier for this tree node
+                    minLength: 1
+                    type: string
+                  subfolders:
+                    description: Subfolders is a list of child tree nodes
+                    type: array
+                    items:
+                      type: object
+                      x-kubernetes-preserve-unknown-fields: true
+                required:
+                - name
+                type: object
+            type: object
+          status:
+            description: status defines the observed state of FolderTree
+            properties:
+              conditions:
+                description: Conditions represent the latest available observations
+                  of the FolderTree's state
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: 'lastTransitionTime is the last time the condition
+                        transitioned from one status to another.
+
+                        This should be when the underlying condition changed.  If
+                        that is not known, then using the time when the API field
+                        changed is acceptable.'
+                      format: date-time
+                      type: string
+                    message:
+                      description: 'message is a human readable message indicating
+                        details about the transition.
+
+                        This may be an empty string.'
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: 'observedGeneration represents the .metadata.generation
+                        that the condition was set based upon.
+
+                        For instance, if .metadata.generation is currently 12, but
+                        the .status.conditions[x].observedGeneration is 9, the condition
+                        is out of date
+
+                        with respect to the current state of the instance.'
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: 'reason contains a programmatic identifier indicating
+                        the reason for the condition''s last transition.
+
+                        Producers of specific condition types may define expected
+                        values and meanings for this field,
+
+                        and whether the values are considered a guaranteed API.
+
+                        The value should be a CamelCase string.
+
+                        This field may not be empty.'
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - 'True'
+                      - 'False'
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              processedGeneration:
+                description: ProcessedGeneration is the generation of the FolderTree
+                  that was last processed
+                format: int64
+                type: integer
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
