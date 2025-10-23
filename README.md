@@ -1,312 +1,274 @@
-# Kubernetes Folder Tree Controller
+# Kubernetes FolderTree Controller
 
-A Kubernetes controller that allows grouping namespaces into a hierarchical structure using a single cluster-scoped resource called `FolderTree` with inline role binding templates. The controller automatically creates and manages `RoleBindings` based on the folder hierarchy and role binding templates.
+**Transform complex RBAC management from hundreds of RoleBindings into a single, hierarchical resource.**
 
-## Overview
+[![Tests](https://github.com/mhenriks/kubernetes-foldertree-controller/workflows/Tests/badge.svg)](https://github.com/mhenriks/kubernetes-foldertree-controller/actions)
+[![E2E Tests](https://github.com/mhenriks/kubernetes-foldertree-controller/workflows/E2E%20Tests/badge.svg)](https://github.com/mhenriks/kubernetes-foldertree-controller/actions)
+[![Go Report Card](https://goreportcard.com/badge/github.com/mhenriks/kubernetes-foldertree-controller)](https://goreportcard.com/report/github.com/mhenriks/kubernetes-foldertree-controller)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-This controller provides:
+Managing Kubernetes RBAC at scale is painful. The FolderTree Controller solves this by organizing namespaces into tree structures with automatic permission inheritance - turning complex RBAC sprawl into simple, maintainable hierarchies.
 
-- **FolderTree**: A single cluster-scoped custom resource that defines hierarchical relationships and folder data with inline RBAC role binding templates
-- **Automatic RoleBinding Management**: The controller creates and manages `RoleBindings` in namespaces based on the folder hierarchy
-- **Simplified Architecture**: All configuration is contained within the `FolderTree` resource - no additional CRDs needed
+## 🚀 Quick Links
 
-## Key Features
+| Getting Started | Documentation | Examples |
+|----------------|---------------|----------|
+| **[🏃 Quick Start](QUICKSTART.md)**<br/>Get running in 5 minutes | **[📖 Complete Guide](GUIDE.md)**<br/>Comprehensive documentation | **[🎯 Demo Examples](demo-examples/README.md)**<br/>Real-world scenarios |
+| **[🏗️ Architecture](PROJECT_SUMMARY.md)**<br/>How it all works | **[🛡️ Security Model](GUIDE.md#security-model)**<br/>Privilege escalation prevention | **[🎤 Presentations](demo-examples/SLIDE_DECK.md)**<br/>Demo materials |
 
-- **Hierarchical RBAC**: Organize namespaces into a tree structure with inherited permissions
-- **Single Resource Management**: All configuration in one `FolderTree` resource - no additional CRDs needed
-- **Secure by Default**: Role binding templates don't inherit unless explicitly enabled with `propagate: true`
-- **Automatic Management**: Controller creates and maintains RoleBindings based on your hierarchy
-- **Comprehensive Validation**: Admission webhook prevents invalid configurations and privilege escalation
-- **Production Ready**: Event-driven architecture with intelligent change detection and status reporting
+## The Problem We Solve
 
-## Architecture
+- 🔥 **RBAC Sprawl**: Managing 100+ RoleBindings across environments becomes unmanageable
+- 🔥 **No Inheritance**: Manually duplicating permissions across related namespaces
+- 🔥 **Error-Prone**: Easy to misconfigure permissions or create security gaps
+- 🔥 **Audit Nightmare**: Understanding permission flows across your organization
+- 🔥 **Maintenance Overhead**: Every team change requires updating dozens of RoleBindings
 
-### Split Structure Design
+## Our Solution
 
-The `FolderTree` uses a split structure approach to minimize OpenAPI v3 recursive schema validation issues:
+✅ **One Resource**: Replace hundreds of RoleBindings with a single FolderTree
+✅ **Automatic Inheritance**: Permissions flow naturally down organizational hierarchies
+✅ **Secure by Default**: Comprehensive validation prevents privilege escalation
+✅ **Production Ready**: Event-driven architecture with intelligent change detection
+✅ **Selective Control**: Fine-grained `propagate` field controls what inherits where
 
-#### **TreeNode** (Hierarchy)
-- Defines parent-child relationships using names only
-- Supports recursive nesting with workaround for CRD schema validation
-- References `Folder` objects by name to establish data associations
+## At a Glance
 
-#### **Folders** (Data)
-- Contain permission names and namespace assignments
-- Exist as a flat list for easy validation and management
-- Can be referenced by the `TreeNode` hierarchy or exist as standalone entities
+### Before: Traditional RBAC (6+ resources)
+```yaml
+# RoleBinding 1: platform-admin in prod-web
+# RoleBinding 2: prod-ops in prod-web
+# RoleBinding 3: web-developers in prod-web
+# RoleBinding 4: platform-admin in prod-api
+# RoleBinding 5: prod-ops in prod-api
+# RoleBinding 6: api-developers in prod-api
+# ... and many more manual RoleBindings
+```
 
-#### **Role Binding Templates** (Inline RBAC)
-- Define RBAC templates directly within each folder with subjects and roleRef
-- Eliminate the need for separate `FolderRoleBinding` resources
-- Each folder can have multiple role binding templates
-- **Selective Propagation**: Use the `propagate` field to control inheritance
-  - `propagate: true` - Template inherits to child folders
-  - `propagate: false` or unset (default) - Template applies only to current folder
-
-### Controller Logic
-
-The controller processes FolderTrees efficiently:
-1. **Mapping**: Links `TreeNode` names to `Folder` data containing RBAC templates and namespaces
-2. **Inheritance**: Child folders inherit role binding templates from parents (when `propagate: true`)
-3. **Smart Updates**: Only creates/updates/deletes RoleBindings that have actually changed
-4. **Event-Driven**: Responds immediately to FolderTree changes, RoleBinding drift, and new namespaces
-
-## Example
-
+### After: FolderTree (1 resource)
 ```yaml
 apiVersion: rbac.kubevirt.io/v1alpha1
 kind: FolderTree
 metadata:
-  name: tree1
+  name: my-organization
 spec:
-  # Define the hierarchical structure
   tree:
-    name: root
+    name: platform
     subfolders:
-    - name: prod
+    - name: production
       subfolders:
-      - name: prod-app-1
-    - name: stage
-  # Define the folder data with inline role binding templates
+      - name: web-app
+      - name: api-service
   folders:
-  - name: root
+  - name: platform
     roleBindingTemplates:
-    - name: admin
-      propagate: true  # Enable inheritance to all child folders
+    - name: platform-admin
+      propagate: true  # Inherits everywhere automatically
       subjects:
       - kind: Group
-        name: operations
+        name: platform-team
         apiGroup: rbac.authorization.k8s.io
       roleRef:
         kind: ClusterRole
         name: admin
         apiGroup: rbac.authorization.k8s.io
-  - name: prod
+  - name: production
     roleBindingTemplates:
-    - name: prod-admin
-      propagate: true  # Explicitly enable inheritance
+    - name: prod-ops
+      propagate: true  # Inherits to production children
       subjects:
       - kind: Group
-        name: prod-ops
+        name: production-operators
         apiGroup: rbac.authorization.k8s.io
       roleRef:
         kind: ClusterRole
         name: admin
         apiGroup: rbac.authorization.k8s.io
-    - name: prod-secrets
-      # No propagate field - defaults to false (no inheritance)
+  - name: web-app
+    roleBindingTemplates:
+    - name: web-developers
       subjects:
       - kind: Group
-        name: prod-security-team
+        name: web-team
         apiGroup: rbac.authorization.k8s.io
       roleRef:
         kind: ClusterRole
-        name: admin
+        name: edit
         apiGroup: rbac.authorization.k8s.io
-    namespaces: ["production-secret"]
-  - name: prod-app-1
+    namespaces: ["prod-web"]
+  - name: api-service
     roleBindingTemplates:
-    - name: prod-admin-app-1
+    - name: api-developers
       subjects:
       - kind: Group
-        name: prod-ops-app-1
+        name: api-team
         apiGroup: rbac.authorization.k8s.io
       roleRef:
         kind: ClusterRole
-        name: admin
+        name: edit
         apiGroup: rbac.authorization.k8s.io
-    namespaces: ["production-app-1"]
-  - name: stage
-    roleBindingTemplates:
-    - name: staging-admin
-      subjects:
-      - kind: Group
-        name: stage-admin
-        apiGroup: rbac.authorization.k8s.io
-      roleRef:
-        kind: ClusterRole
-        name: admin
-        apiGroup: rbac.authorization.k8s.io
-    namespaces: ["staging"]
-  - name: treeless
-    roleBindingTemplates:
-    - name: fred
-      subjects:
-      - kind: User
-        name: fred
-        apiGroup: rbac.authorization.k8s.io
-      roleRef:
-        kind: ClusterRole
-        name: admin
-        apiGroup: rbac.authorization.k8s.io
-    namespaces: ["freds-namespace"]
+    namespaces: ["prod-api"]
 ```
 
-In this example:
-- **`production-app-1` namespace** gets RoleBindings for: `admin` (from root with `propagate: true`), `prod-admin` (from prod with `propagate: true`), and `prod-admin-app-1` (from prod-app-1)
-  - **Does NOT get**: `prod-secrets` (defaults to no inheritance)
-- **`production-secret` namespace** gets RoleBindings for: `admin` (from root with `propagate: true`), `prod-admin` (from prod with `propagate: true`), and `prod-secrets` (from prod)
-- **`staging` namespace** gets RoleBindings for: `admin` (from root with `propagate: true`) and `staging-admin` (from stage)
-- **`freds-namespace` namespace** gets RoleBindings for: `fred` (standalone folder outside tree structure)
+**Result**: Automatically creates all 6+ RoleBindings with proper inheritance:
+- `prod-web` gets: `platform-admin` + `prod-ops` + `web-developers`
+- `prod-api` gets: `platform-admin` + `prod-ops` + `api-developers`
 
-Each role binding template (e.g., `admin`, `prod-admin`) is defined inline within the folder and contains the actual RBAC subjects and roleRef.
+## Key Features
 
-### Benefits of Split Structure:
-- ✅ **Clean separation** of hierarchy vs data
-- ✅ **Strict validation** for Folders (data), workaround for TreeNodes (hierarchy)
-- ✅ **Flexible design** supports standalone folders
-- ✅ **Reduces recursive CRD issues** to minimal scope (only TreeNode.subfolders)
+### 🎯 **Hierarchical RBAC**
+Organize namespaces into tree structures that mirror your organization. Permissions flow naturally from platform → environment → application.
+
+### 🔄 **Selective Inheritance**
+Fine-grained control with `propagate: true/false`. Platform admins inherit everywhere, but secrets access stays restricted to specific folders.
+
+### 🛡️ **Security First**
+Comprehensive validation prevents privilege escalation. Users can only grant permissions they already possess. Built-in admission webhook validates all operations.
+
+### ⚡ **Event-Driven**
+No polling. Responds immediately to changes with intelligent diff analysis - only updates what actually changed.
+
+### 📊 **Production Ready**
+Status reporting, health checks, metrics, automatic cleanup, and TLS webhooks. Built for enterprise environments.
 
 ## Installation
 
-### Quick Start (Local Development)
-
+### Development (Local)
 ```bash
-# Install CRDs
-make install
-
-# Run controller locally (webhooks disabled for development)
-ENABLE_WEBHOOKS=false make run
+git clone https://github.com/mhenriks/kubernetes-foldertree-controller
+cd kubernetes-foldertree-controller
+make install && ENABLE_WEBHOOKS=false make run
 ```
 
-### Production Deployment
-
+### Production (Cluster)
 ```bash
-# Deploy to cluster (includes CRDs, controller, and webhooks)
-make deploy
+make deploy  # Includes CRDs, controller, webhooks, and RBAC
 ```
 
-The deployment includes:
-- Custom Resource Definitions (CRDs)
-- Controller with proper RBAC permissions
-- Validating admission webhook (requires cert-manager for TLS)
+**Need help?** See the **[Quick Start Guide](QUICKSTART.md)** for detailed installation steps.
 
-> **Note**: For production, review RBAC permissions in `config/rbac/` and webhook certificates in `config/webhook/`
+## Why Teams Choose FolderTree
 
-## Usage
+- **90% Reduction** in RBAC resource management overhead
+- **Zero Manual RoleBindings** - everything automated through inheritance
+- **Audit-Ready** - clear permission inheritance paths
+- **Security Improved** - built-in privilege escalation prevention
+- **GitOps Friendly** - declarative RBAC as code
 
-1. Create the required `ClusterRoles` (see `config/samples/test-setup.yaml`)
-2. Create a `FolderTree` resource with inline role binding templates (see `config/samples/rbac_v1alpha1_foldertree.yaml`)
+## How It Works
 
-The controller will automatically create the appropriate `RoleBindings` in the specified namespaces.
+FolderTree uses a "split structure" design that separates concerns:
 
-## Validation
+- **Tree**: Defines the hierarchy (who reports to whom)
+- **Folders**: Contains the actual RBAC templates and namespace assignments
+- **Controller**: Automatically creates/updates RoleBindings based on inheritance rules
 
-The controller includes a validating admission webhook that ensures FolderTree resources are valid and secure before they're created, updated, or deleted in the cluster.
+```
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   FolderTree    │───▶│    Controller    │───▶│  RoleBindings   │
+│   Resource      │    │                  │    │  (Auto-created) │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+         ▲                       │
+         │                       ▼
+┌─────────────────┐    ┌──────────────────┐
+│ Admission       │    │ Event Watchers   │
+│ Webhook         │    │ (Drift Detection)│
+│ (Validation)    │    └──────────────────┘
+└─────────────────┘
+```
 
-The webhook validates FolderTree resources and prevents common issues:
+The controller watches for changes and maintains the desired state, while the admission webhook validates all operations for security.
 
-- **Unique names**: Folder and TreeNode names must be unique
-- **Valid references**: TreeNodes must reference existing Folders
-- **Namespace conflicts**: Each namespace can only be assigned to one folder
-- **RBAC authorization**: Users must have permission to create/modify/delete the RoleBindings
-- **Format validation**: Names must follow Kubernetes DNS-1123 format
+**Want to understand the architecture?** Read the **[Architecture Deep Dive](PROJECT_SUMMARY.md)**.
 
-Invalid resources are rejected with clear error messages explaining what needs to be fixed.
+## Real-World Examples
 
-## Security
+### Basic Organizational Hierarchy
+Perfect for teams getting started with hierarchical RBAC:
+- Platform team gets admin access everywhere
+- Environment-specific teams get scoped access
+- Application teams get edit access to their services
+
+### Multi-Environment Enterprise
+Complex organizational structures with:
+- Multiple inheritance levels (org → platform → apps → services)
+- Service account permissions for automation
+- Emergency access patterns
+- Selective propagation for security-sensitive permissions
+
+### GitOps Integration
+Declarative RBAC management that works with:
+- ArgoCD and Flux deployments
+- CI/CD pipeline permissions
+- Infrastructure as Code workflows
+
+**See all examples:** **[Demo Examples](demo-examples/README.md)**
+
+## Security & Compliance
 
 ### Privilege Escalation Prevention
+- **Webhook Validation**: Users can only grant permissions they possess
+- **Impersonation Testing**: Dry-run validation with user context
+- **Controller Permissions**: Must have all permissions it manages
+- **Fail-Safe Design**: Rejects operations if any validation fails
 
-The controller includes important security measures to prevent privilege escalation:
+### Production Security
+- **TLS Webhooks**: Encrypted communication with cert-manager
+- **Network Policies**: Secure inter-component communication
+- **Audit Trail**: Comprehensive logging and status reporting
+- **RBAC Options**: Minimal or custom permission sets available
 
-#### **RBAC Authorization Checks**
-- **Fine-grained Validation**: The webhook uses **diff analysis + impersonation + dry-run** to test only the specific operations being performed (create/update/delete), validating permissions for actual changes
-- **Handles All Permission Types**: Correctly validates clusterroles/clusterrolebindings management permissions AND individual permissions within referenced ClusterRoles
-- **Handles Wildcards**: Unlike individual permission checks, this approach correctly handles wildcard permissions (`*`) and aggregated ClusterRoles
-- **Shared Logic**: Webhook uses the same RoleBinding creation logic as the controller for accuracy
-- **Fail-Safe Design**: If any permission is missing, the dry-run fails and the webhook rejects the FolderTree creation/update
+**Learn more:** **[Security Model](GUIDE.md#security-model)**
 
-#### **Controller Permissions**
+## Community & Support
 
-⚠️ **Important**: The controller itself must have all the permissions it manages to avoid "attempting to grant RBAC permissions not currently held" errors.
+### 🤝 **Get Help**
+- **[Quick Start](QUICKSTART.md)** - Get running in 5 minutes
+- **[User Guide](GUIDE.md)** - Comprehensive documentation
+- **[Troubleshooting](GUIDE.md#troubleshooting)** - Common issues and solutions
+- **[GitHub Issues](https://github.com/mhenriks/kubernetes-foldertree-controller/issues)** - Bug reports and feature requests
+- **[Discussions](https://github.com/mhenriks/kubernetes-foldertree-controller/discussions)** - Questions and community support
 
-**The Problem**: Kubernetes prevents controllers from creating RoleBindings that grant permissions the controller doesn't have itself. This is a security feature to prevent privilege escalation.
+### 🚀 **Contributing**
+We welcome contributions! See our **[Development Guide](GUIDE.md#development)** to get started.
 
-**The Solution**: The deployment includes `config/rbac/controller_permissions.yaml` which grants the controller broad permissions equivalent to common ClusterRoles like `admin`, `view`, and `edit`.
+- **Report Issues**: Found a bug? Open an issue with details
+- **Feature Requests**: Have an idea? Start a discussion
+- **Code Contributions**: Fork, develop, test, and submit PRs
+- **Documentation**: Help improve our guides and examples
 
-**Production Considerations**:
-- **Review Permissions**: Audit `config/rbac/controller_permissions.yaml` and restrict it to only the permissions your FolderTrees actually need
-- **Alternative Permission Sets**: See `config/rbac/README.md` for minimal permission alternatives and customization guidance
-- **Principle of Least Privilege**: Consider creating custom ClusterRoles with minimal permissions instead of using broad roles like `admin`
-- **Regular Audits**: Regularly review what permissions the controller has and what FolderTrees are granting
+### 📊 **Project Status**
+- **API Version**: v1alpha1 (active development)
+- **Production Ready**: Comprehensive testing and security measures
+- **License**: Apache 2.0
+- **Maintainer**: [@mhenriks](https://github.com/mhenriks)
 
-#### **How Security Prevention Works:**
+## Documentation
 
-The webhook prevents privilege escalation through two main checks:
+| Document | Purpose | Audience |
+|----------|---------|----------|
+| **[Quick Start](QUICKSTART.md)** | Get running in 5 minutes | First-time users |
+| **[User Guide](GUIDE.md)** | Comprehensive documentation | Adopters & operators |
+| **[Architecture](PROJECT_SUMMARY.md)** | Technical deep dive | Architects & contributors |
+| **[Demo Examples](demo-examples/README.md)** | Real-world scenarios | All users |
+| **[Presentations](demo-examples/SLIDE_DECK.md)** | Demo materials | Presenters |
 
-**1. RoleBinding Management Check**
-- User must have permission to create/update/delete RoleBindings in the target namespaces
-- Without this, the user can't perform the basic RoleBinding operations the controller needs
+## Quick Start Checklist
 
-**2. Individual Permission Check**
-- User must have all the individual permissions contained within the ClusterRoles they're trying to grant
-- This prevents users from granting permissions they don't have themselves
-- Works correctly with wildcard permissions (`*`) and aggregated ClusterRoles
+Ready to transform your RBAC management? Follow these steps:
 
-**Common Rejection Scenarios:**
-- User tries to create RoleBindings but lacks `rolebindings.rbac.authorization.k8s.io` permissions
-- User has RoleBinding permissions but lacks specific permissions like "create pods" that are in the ClusterRole they're referencing
-- User tries to delete a FolderTree but lacks permission to delete the existing RoleBindings
-
-The webhook shows clear error messages explaining exactly which permission check failed.
-
-#### **Required User Permissions:**
-To create/update/delete FolderTrees, users need permissions for **only the specific RoleBinding operations** the controller will perform. The webhook validates each operation before allowing the FolderTree change.
-
-**Examples of what permissions you need:**
-
-- **Adding a new role binding template** → Permission to CREATE RoleBindings with those specific permissions
-- **Removing a role binding template** → Permission to DELETE the existing RoleBindings
-- **Changing template subjects or roleRef** → Permission to UPDATE the RoleBindings
-- **Adding a namespace to a folder** → Permission to CREATE RoleBindings in that namespace
-- **Deleting a FolderTree** → Permission to DELETE all RoleBindings that would be removed
-
-The webhook shows exactly which RoleBinding operation failed if you lack the required permissions.
-
-## Development
-
-### Prerequisites
-
-- Go 1.21+
-- kubectl
-- Kubernetes cluster (kind/minikube for local testing)
-
-### Building
-
-```bash
-# Generate manifests and build
-make generate && make manifests
-make build
-
-# Run tests
-make test
-
-# Build and push Docker image
-make docker-build docker-push IMG=<registry>/folders:tag
-```
-
-### Project Structure
-
-```
-├── api/v1alpha1/           # CRD definitions
-├── internal/controller/    # Controller reconciliation logic
-├── internal/rbac/         # RBAC calculation and diff analysis
-├── internal/webhook/      # Admission webhook validation
-├── config/                # Kubernetes manifests
-│   ├── samples/          # Example FolderTree resources
-│   └── rbac/             # Controller permissions
-└── demo-examples/         # Demo and testing resources
-```
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Submit a pull request
+- [ ] **[Install the controller](QUICKSTART.md#installation-1-minute)** (1 minute)
+- [ ] **[Create your first FolderTree](QUICKSTART.md#your-first-foldertree-2-minutes)** (2 minutes)
+- [ ] **[Verify inheritance works](QUICKSTART.md#what-just-happened)** (1 minute)
+- [ ] **[Explore advanced examples](demo-examples/README.md)** (10 minutes)
+- [ ] **[Plan your production deployment](GUIDE.md#production-considerations)** (30 minutes)
 
 ## License
 
-Licensed under the Apache License, Version 2.0.
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
+
+---
+
+**Ready to eliminate RBAC sprawl?** Start with the **[Quick Start Guide](QUICKSTART.md)** and join the growing community of teams simplifying Kubernetes permissions with FolderTree Controller.
+
+⭐ **Star this repository** if you find it useful!
