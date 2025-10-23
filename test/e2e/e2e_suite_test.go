@@ -48,7 +48,7 @@ var (
 // CertManager.
 func TestE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
-	_, _ = fmt.Fprintf(GinkgoWriter, "Starting folders integration test suite\n")
+	_, _ = fmt.Fprintf(GinkgoWriter, "Starting foldertree integration test suite\n")
 	RunSpecs(t, "e2e suite")
 }
 
@@ -81,6 +81,10 @@ var _ = BeforeSuite(func() {
 })
 
 var _ = AfterSuite(func() {
+	// Clean up test resources
+	By("cleaning up test ClusterRoleBindings")
+	utils.Run(exec.Command("kubectl", "delete", "clusterrolebinding", "foldertree-metrics-binding", "--ignore-not-found"))
+
 	// Teardown CertManager after the suite if not skipped and if it was not already installed
 	if !skipCertManagerInstall && !isCertManagerAlreadyInstalled {
 		_, _ = fmt.Fprintf(GinkgoWriter, "Uninstalling CertManager...\n")

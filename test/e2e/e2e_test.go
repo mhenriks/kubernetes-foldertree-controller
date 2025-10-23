@@ -171,9 +171,14 @@ var _ = Describe("Manager", Ordered, func() {
 		})
 
 		It("should ensure the metrics endpoint is serving metrics", func() {
-			By("creating a ClusterRoleBinding for the service account to allow access to metrics")
+			By("ensuring ClusterRoleBinding for metrics access exists")
+			// Delete existing ClusterRoleBinding if it exists (cleanup from previous runs)
+			deleteCmd := exec.Command("kubectl", "delete", "clusterrolebinding", metricsRoleBindingName, "--ignore-not-found")
+			_, _ = utils.Run(deleteCmd) // Ignore errors - it's OK if it doesn't exist
+
+			// Create the ClusterRoleBinding
 			cmd := exec.Command("kubectl", "create", "clusterrolebinding", metricsRoleBindingName,
-				"--clusterrole=folders-metrics-reader",
+				"--clusterrole=foldertree-metrics-reader",
 				fmt.Sprintf("--serviceaccount=%s:%s", namespace, serviceAccountName),
 			)
 			_, err := utils.Run(cmd)
@@ -272,7 +277,7 @@ var _ = Describe("Manager", Ordered, func() {
 			verifyCAInjection := func(g Gomega) {
 				cmd := exec.Command("kubectl", "get",
 					"validatingwebhookconfigurations.admissionregistration.k8s.io",
-					"folders-validating-webhook-configuration",
+					"foldertree-validating-webhook-configuration",
 					"-o", "go-template={{ range .webhooks }}{{ .clientConfig.caBundle }}{{ end }}")
 				vwhOutput, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
