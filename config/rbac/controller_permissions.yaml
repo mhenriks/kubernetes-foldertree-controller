@@ -9,13 +9,13 @@ kind: ClusterRole
 metadata:
   name: foldertree-controller-permissions
 rules:
-# Grant the controller permissions equivalent to the 'admin' ClusterRole
-# This allows it to create RoleBindings that reference 'admin', 'edit', 'view', etc.
-- apiGroups: ["*"]
-  resources: ["*"]
-  verbs: ["*"]
-- nonResourceURLs: ["*"]
-  verbs: ["*"]
+  # Grant the controller permissions equivalent to the 'admin' ClusterRole
+  # This allows it to create RoleBindings that reference 'admin', 'edit', 'view', etc.
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["*"]
+  - nonResourceURLs: ["*"]
+    verbs: ["*"]
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -27,6 +27,6 @@ roleRef:
   kind: ClusterRole
   name: foldertree-controller-permissions
 subjects:
-- kind: ServiceAccount
-  name: folder-controller-manager
-  namespace: folders-system
+  - kind: ServiceAccount
+    name: foldertree-controller-manager
+    namespace: foldertree-system

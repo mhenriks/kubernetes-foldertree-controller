@@ -31,16 +31,16 @@ import (
 )
 
 // namespace where the project is deployed in
-const namespace = "folders-system"
+const namespace = "foldertree-system"
 
 // serviceAccountName created for the project
-const serviceAccountName = "folders-controller-manager"
+const serviceAccountName = "foldertree-controller-manager"
 
 // metricsServiceName is the name of the metrics service of the project
-const metricsServiceName = "folders-controller-manager-metrics-service"
+const metricsServiceName = "foldertree-controller-manager-metrics-service"
 
 // metricsRoleBindingName is the name of the RBAC that will be created to allow get the metrics data
-const metricsRoleBindingName = "folders-metrics-binding"
+const metricsRoleBindingName = "foldertree-metrics-binding"
 
 var _ = Describe("Manager", Ordered, func() {
 	var controllerPodName string

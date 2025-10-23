@@ -760,7 +760,7 @@ func (v *FolderTreeCustomValidator) validateRBACAuthorizationUpdate(ctx context.
 	// Get the user info from the admission request
 	req, err := admission.RequestFromContext(ctx)
 	if err != nil {
-		// If we can't get the request, skip authorization check (fail open for system requests)
+		// If we can't get the request, skip authorization check (fail open)
 		foldertreelog.Info("Could not get admission request for RBAC authorization check", "error", err)
 		return nil
 	}
@@ -885,14 +885,8 @@ func (v *FolderTreeCustomValidator) validateRBACAuthorizationDelete(ctx context.
 	// Get the user info from the admission request
 	req, err := admission.RequestFromContext(ctx)
 	if err != nil {
-		// If we can't get the request, skip authorization check (fail open for system requests)
+		// If we can't get the request, skip authorization check (fail open)
 		foldertreelog.Info("Could not get admission request for RBAC authorization check", "error", err)
-		return nil
-	}
-
-	// Skip validation for system users (controllers, etc.)
-	if req.UserInfo.Username == "system:serviceaccount:folders-system:folder-controller-manager" ||
-		req.UserInfo.Username == "system:admin" {
 		return nil
 	}
 

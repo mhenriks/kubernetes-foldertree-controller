@@ -6,38 +6,101 @@ kind: ClusterRole
 metadata:
   name: foldertree-controller-permissions-minimal
 rules:
-# Permissions equivalent to the 'view' ClusterRole (read-only)
-- apiGroups: [""]
-  resources: ["configmaps", "endpoints", "persistentvolumeclaims", "pods", "replicationcontrollers", "resourcequotas", "secrets", "services"]
-  verbs: ["get", "list", "watch"]
-- apiGroups: [""]
-  resources: ["bindings", "events", "limitranges", "namespaces/status", "pods/log", "pods/status", "replicationcontrollers/status", "resourcequotas/status", "services/status"]
-  verbs: ["get", "list", "watch"]
-- apiGroups: [""]
-  resources: ["namespaces"]
-  verbs: ["get", "list", "watch"]
-- apiGroups: ["apps"]
-  resources: ["controllerrevisions", "daemonsets", "deployments", "replicasets", "statefulsets"]
-  verbs: ["get", "list", "watch"]
-- apiGroups: ["apps"]
-  resources: ["daemonsets/status", "deployments/status", "replicasets/status", "statefulsets/status"]
-  verbs: ["get", "list", "watch"]
+  # Permissions equivalent to the 'view' ClusterRole (read-only)
+  - apiGroups: [""]
+    resources:
+      [
+        "configmaps",
+        "endpoints",
+        "persistentvolumeclaims",
+        "pods",
+        "replicationcontrollers",
+        "resourcequotas",
+        "secrets",
+        "services",
+      ]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources:
+      [
+        "bindings",
+        "events",
+        "limitranges",
+        "namespaces/status",
+        "pods/log",
+        "pods/status",
+        "replicationcontrollers/status",
+        "resourcequotas/status",
+        "services/status",
+      ]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources:
+      [
+        "controllerrevisions",
+        "daemonsets",
+        "deployments",
+        "replicasets",
+        "statefulsets",
+      ]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources:
+      [
+        "daemonsets/status",
+        "deployments/status",
+        "replicasets/status",
+        "statefulsets/status",
+      ]
+    verbs: ["get", "list", "watch"]
 
-# Permissions equivalent to the 'edit' ClusterRole (read-write but not admin)
-- apiGroups: [""]
-  resources: ["configmaps", "endpoints", "persistentvolumeclaims", "pods", "replicationcontrollers", "secrets", "services"]
-  verbs: ["create", "delete", "deletecollection", "patch", "update"]
-- apiGroups: ["apps"]
-  resources: ["daemonsets", "deployments", "replicasets", "statefulsets"]
-  verbs: ["create", "delete", "deletecollection", "patch", "update"]
-- apiGroups: ["batch"]
-  resources: ["jobs", "cronjobs"]
-  verbs: ["create", "delete", "deletecollection", "patch", "update", "get", "list", "watch"]
+  # Permissions equivalent to the 'edit' ClusterRole (read-write but not admin)
+  - apiGroups: [""]
+    resources:
+      [
+        "configmaps",
+        "endpoints",
+        "persistentvolumeclaims",
+        "pods",
+        "replicationcontrollers",
+        "secrets",
+        "services",
+      ]
+    verbs: ["create", "delete", "deletecollection", "patch", "update"]
+  - apiGroups: ["apps"]
+    resources: ["daemonsets", "deployments", "replicasets", "statefulsets"]
+    verbs: ["create", "delete", "deletecollection", "patch", "update"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs:
+      [
+        "create",
+        "delete",
+        "deletecollection",
+        "patch",
+        "update",
+        "get",
+        "list",
+        "watch",
+      ]
 
-# Permissions equivalent to the 'admin' ClusterRole (namespace admin)
-- apiGroups: ["rbac.authorization.k8s.io"]
-  resources: ["rolebindings", "roles"]
-  verbs: ["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
+  # Permissions equivalent to the 'admin' ClusterRole (namespace admin)
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["rolebindings", "roles"]
+    verbs:
+      [
+        "create",
+        "delete",
+        "deletecollection",
+        "get",
+        "list",
+        "patch",
+        "update",
+        "watch",
+      ]
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -49,6 +112,6 @@ roleRef:
   kind: ClusterRole
   name: foldertree-controller-permissions-minimal
 subjects:
-- kind: ServiceAccount
-  name: folder-controller-manager
-  namespace: folders-system
+  - kind: ServiceAccount
+    name: foldertree-controller-manager
+    namespace: foldertree-system
