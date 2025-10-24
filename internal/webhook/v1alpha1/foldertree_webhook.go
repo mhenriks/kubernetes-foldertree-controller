@@ -795,6 +795,7 @@ func (v *FolderTreeCustomValidator) validateRBACAuthorizationUpdate(ctx context.
 
 // validateOperationsWithImpersonation performs privilege escalation validation
 // by impersonating the user and attempting to perform the required operations with dry-run.
+// Handles DELETE+CREATE pairs specially to avoid dry-run conflicts with immutable roleRef.
 func (v *FolderTreeCustomValidator) validateOperationsWithImpersonation(ctx context.Context, operations []rbac.RoleBindingOperation, userInfo authenticationv1.UserInfo) error {
 	// Create an impersonation client for the requesting user
 	impersonationClient, err := v.createImpersonationClient(userInfo)
@@ -802,10 +803,13 @@ func (v *FolderTreeCustomValidator) validateOperationsWithImpersonation(ctx cont
 		return fmt.Errorf("failed to create impersonation client: %v", err)
 	}
 
-	// Validate each operation with impersonation + dry-run
-	for _, operation := range operations {
-		if err := v.validateSingleOperation(ctx, impersonationClient, operation); err != nil {
-			return fmt.Errorf("failed to validate %s: %v", operation.String(), err)
+	// Group operations by namespace/name to detect DELETE+CREATE pairs
+	operationGroups := v.groupOperationsByTarget(operations)
+
+	// Validate each group of operations
+	for target, ops := range operationGroups {
+		if err := v.validateOperationGroup(ctx, impersonationClient, target, ops); err != nil {
+			return fmt.Errorf("failed to validate operations for %s: %v", target, err)
 		}
 	}
 
@@ -833,6 +837,82 @@ func (v *FolderTreeCustomValidator) createImpersonationClient(userInfo authentic
 	}
 
 	return impersonationClient, nil
+}
+
+// groupOperationsByTarget groups operations by their target RoleBinding (namespace/name)
+// to detect DELETE+CREATE pairs that need special handling due to immutable roleRef
+func (v *FolderTreeCustomValidator) groupOperationsByTarget(operations []rbac.RoleBindingOperation) map[string][]rbac.RoleBindingOperation {
+	groups := make(map[string][]rbac.RoleBindingOperation)
+
+	for _, op := range operations {
+		var target string
+		switch op.Type {
+		case rbac.OperationCreate:
+			target = fmt.Sprintf("%s/%s", op.Namespace, op.DesiredRoleBinding.Name)
+		case rbac.OperationUpdate:
+			target = fmt.Sprintf("%s/%s", op.Namespace, op.ExistingRoleBinding.Name)
+		case rbac.OperationDelete:
+			target = fmt.Sprintf("%s/%s", op.Namespace, op.ExistingRoleBinding.Name)
+		}
+
+		groups[target] = append(groups[target], op)
+	}
+
+	return groups
+}
+
+// validateOperationGroup validates a group of operations for the same target RoleBinding
+// Handles DELETE+CREATE pairs specially to avoid dry-run conflicts with immutable roleRef
+func (v *FolderTreeCustomValidator) validateOperationGroup(ctx context.Context, impersonationClient client.Client, target string, operations []rbac.RoleBindingOperation) error {
+	// Check if this is a DELETE+CREATE pair (roleRef change scenario)
+	if len(operations) == 2 {
+		var deleteOp, createOp *rbac.RoleBindingOperation
+		for i := range operations {
+			switch operations[i].Type {
+			case rbac.OperationDelete:
+				deleteOp = &operations[i]
+			case rbac.OperationCreate:
+				createOp = &operations[i]
+			}
+		}
+
+		if deleteOp != nil && createOp != nil {
+			// This is a DELETE+CREATE pair - handle specially
+			return v.validateDeleteCreatePair(ctx, impersonationClient, *deleteOp, *createOp)
+		}
+	}
+
+	// Not a DELETE+CREATE pair - validate operations individually
+	for _, operation := range operations {
+		if err := v.validateSingleOperation(ctx, impersonationClient, operation); err != nil {
+			return fmt.Errorf("failed to validate %s: %v", operation.String(), err)
+		}
+	}
+
+	return nil
+}
+
+// validateDeleteCreatePair validates DELETE+CREATE operations for the same RoleBinding
+// Uses temporary unique name for CREATE validation to avoid dry-run conflicts
+func (v *FolderTreeCustomValidator) validateDeleteCreatePair(ctx context.Context, impersonationClient client.Client, deleteOp, createOp rbac.RoleBindingOperation) error {
+	// Validate DELETE of existing RoleBinding
+	if err := v.validateDeleteOperation(ctx, impersonationClient, deleteOp); err != nil {
+		return fmt.Errorf("failed to validate DELETE operation: %v", err)
+	}
+
+	// Validate CREATE with temporary unique name to avoid conflicts
+	tempCreateOp := createOp
+	tempCreateOp.DesiredRoleBinding = createOp.DesiredRoleBinding.DeepCopy()
+
+	// Generate unique validation name (only for validation, not used in actual cluster)
+	originalName := createOp.DesiredRoleBinding.Name
+	tempCreateOp.DesiredRoleBinding.Name = rbac.GenerateRandomRoleBindingName(originalName, "validation")
+
+	if err := v.validateCreateOperation(ctx, impersonationClient, tempCreateOp); err != nil {
+		return fmt.Errorf("failed to validate CREATE operation: %v", err)
+	}
+
+	return nil
 }
 
 // validateSingleOperation validates a single RoleBinding operation with impersonation + dry-run

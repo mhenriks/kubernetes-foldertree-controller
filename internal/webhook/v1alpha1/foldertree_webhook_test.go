@@ -22,8 +22,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	rbacv1 "k8s.io/api/rbac/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	rbacv1alpha1 "kubevirt.io/folders/api/v1alpha1"
+	"kubevirt.io/folders/internal/rbac"
 )
 
 var _ = Describe("FolderTree Webhook", func() {
@@ -1476,6 +1478,62 @@ var _ = Describe("FolderTree Webhook", func() {
 			warnings, err := validator.ValidateDelete(ctx, obj)
 			Expect(warnings).To(BeEmpty())
 			Expect(err).NotTo(HaveOccurred()) // Should succeed as no RoleBindings would be created
+		})
+	})
+
+	Context("DELETE+CREATE Pair Validation", func() {
+		It("should group operations by target correctly", func() {
+			validator := FolderTreeCustomValidator{}
+
+			operations := []rbac.RoleBindingOperation{
+				{
+					Type:      rbac.OperationDelete,
+					Namespace: "test-ns",
+					ExistingRoleBinding: &rbacv1.RoleBinding{
+						ObjectMeta: metav1.ObjectMeta{Name: "test-rb"},
+					},
+				},
+				{
+					Type:      rbac.OperationCreate,
+					Namespace: "test-ns",
+					DesiredRoleBinding: &rbacv1.RoleBinding{
+						ObjectMeta: metav1.ObjectMeta{Name: "test-rb"},
+					},
+				},
+				{
+					Type:      rbac.OperationCreate,
+					Namespace: "other-ns",
+					DesiredRoleBinding: &rbacv1.RoleBinding{
+						ObjectMeta: metav1.ObjectMeta{Name: "other-rb"},
+					},
+				},
+			}
+
+			groups := validator.groupOperationsByTarget(operations)
+
+			// Should have 2 groups
+			Expect(groups).To(HaveLen(2))
+
+			// test-ns/test-rb should have DELETE+CREATE pair
+			testNsGroup := groups["test-ns/test-rb"]
+			Expect(testNsGroup).To(HaveLen(2))
+
+			var hasDelete, hasCreate bool
+			for _, op := range testNsGroup {
+				switch op.Type {
+				case rbac.OperationDelete:
+					hasDelete = true
+				case rbac.OperationCreate:
+					hasCreate = true
+				}
+			}
+			Expect(hasDelete).To(BeTrue())
+			Expect(hasCreate).To(BeTrue())
+
+			// other-ns/other-rb should have single CREATE
+			otherNsGroup := groups["other-ns/other-rb"]
+			Expect(otherNsGroup).To(HaveLen(1))
+			Expect(otherNsGroup[0].Type).To(Equal(rbac.OperationCreate))
 		})
 	})
 })

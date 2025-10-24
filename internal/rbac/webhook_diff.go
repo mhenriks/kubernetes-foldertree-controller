@@ -77,13 +77,33 @@ func (w *WebhookDiffAnalyzer) compareDesiredStates(oldDesired, newDesired map[st
 		if oldRB, exists := oldDesired[key]; exists {
 			// RoleBinding existed before - check if it needs updating
 			if w.needsUpdate(oldRB.RoleBinding, newRB.RoleBinding) {
-				operations = append(operations, RoleBindingOperation{
-					Type:                OperationUpdate,
-					Namespace:           newRB.Namespace,
-					RoleBindingTemplate: newRB.RoleBindingTemplate,
-					ExistingRoleBinding: oldRB.RoleBinding,
-					DesiredRoleBinding:  newRB.RoleBinding,
-				})
+				// Check if roleRef changed - if so, we need DELETE+CREATE because roleRef is immutable
+				if oldRB.RoleBinding.RoleRef != newRB.RoleBinding.RoleRef {
+					// RoleRef changed - need to delete and recreate
+					operations = append(operations, RoleBindingOperation{
+						Type:                OperationDelete,
+						Namespace:           newRB.Namespace,
+						RoleBindingTemplate: oldRB.RoleBindingTemplate,
+						ExistingRoleBinding: oldRB.RoleBinding,
+						DesiredRoleBinding:  nil,
+					})
+					operations = append(operations, RoleBindingOperation{
+						Type:                OperationCreate,
+						Namespace:           newRB.Namespace,
+						RoleBindingTemplate: newRB.RoleBindingTemplate,
+						ExistingRoleBinding: nil,
+						DesiredRoleBinding:  newRB.RoleBinding,
+					})
+				} else {
+					// Only subjects or labels changed - safe to update
+					operations = append(operations, RoleBindingOperation{
+						Type:                OperationUpdate,
+						Namespace:           newRB.Namespace,
+						RoleBindingTemplate: newRB.RoleBindingTemplate,
+						ExistingRoleBinding: oldRB.RoleBinding,
+						DesiredRoleBinding:  newRB.RoleBinding,
+					})
+				}
 			}
 		} else {
 			// New RoleBinding - create operation

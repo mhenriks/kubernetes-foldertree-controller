@@ -148,13 +148,33 @@ func (da *DiffAnalyzer) compareAndGenerateOperations(existing map[string]*rbacv1
 		if existingRB, exists := existing[key]; exists {
 			// RoleBinding exists, check if it needs updating
 			if da.needsUpdate(existingRB, desiredRB.RoleBinding) {
-				operations = append(operations, RoleBindingOperation{
-					Type:                OperationUpdate,
-					Namespace:           desiredRB.Namespace,
-					RoleBindingTemplate: desiredRB.RoleBindingTemplate,
-					ExistingRoleBinding: existingRB,
-					DesiredRoleBinding:  desiredRB.RoleBinding,
-				})
+				// Check if roleRef changed - if so, we need DELETE+CREATE because roleRef is immutable
+				if existingRB.RoleRef != desiredRB.RoleBinding.RoleRef {
+					// RoleRef changed - need to delete and recreate
+					operations = append(operations, RoleBindingOperation{
+						Type:                OperationDelete,
+						Namespace:           desiredRB.Namespace,
+						RoleBindingTemplate: desiredRB.RoleBindingTemplate,
+						ExistingRoleBinding: existingRB,
+						DesiredRoleBinding:  nil,
+					})
+					operations = append(operations, RoleBindingOperation{
+						Type:                OperationCreate,
+						Namespace:           desiredRB.Namespace,
+						RoleBindingTemplate: desiredRB.RoleBindingTemplate,
+						ExistingRoleBinding: nil,
+						DesiredRoleBinding:  desiredRB.RoleBinding,
+					})
+				} else {
+					// Only subjects or labels changed - safe to update
+					operations = append(operations, RoleBindingOperation{
+						Type:                OperationUpdate,
+						Namespace:           desiredRB.Namespace,
+						RoleBindingTemplate: desiredRB.RoleBindingTemplate,
+						ExistingRoleBinding: existingRB,
+						DesiredRoleBinding:  desiredRB.RoleBinding,
+					})
+				}
 			}
 		} else {
 			// RoleBinding doesn't exist, needs to be created

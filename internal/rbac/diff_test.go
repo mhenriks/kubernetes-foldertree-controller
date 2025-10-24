@@ -686,4 +686,166 @@ var _ = Describe("DiffAnalyzer", func() {
 			Expect(deleteOp.String()).To(ContainSubstring("DELETE RoleBinding 'test-rb' in namespace 'test-ns'"))
 		})
 	})
+
+	Context("RoleRef Change Scenarios", func() {
+		It("should generate DELETE+CREATE operations when roleRef changes", func() {
+			// Create existing RoleBinding with 'view' roleRef
+			existingRB := &rbacv1.RoleBinding{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "foldertree-test-admin",
+					Namespace: "test-ns",
+					Labels: map[string]string{
+						"foldertree.rbac.kubevirt.io/tree": "test",
+					},
+				},
+				Subjects: []rbacv1.Subject{
+					{
+						Kind:     "Group",
+						Name:     "test-group",
+						APIGroup: "rbac.authorization.k8s.io",
+					},
+				},
+				RoleRef: rbacv1.RoleRef{
+					Kind:     "ClusterRole",
+					Name:     "view", // Original roleRef
+					APIGroup: "rbac.authorization.k8s.io",
+				},
+			}
+
+			// Add existing RoleBinding to fake client
+			fakeClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(existingRB).Build()
+
+			// Create FolderTree with changed roleRef
+			folderTree = &rbacv1alpha1.FolderTree{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: rbacv1alpha1.FolderTreeSpec{
+					Folders: []rbacv1alpha1.Folder{
+						{
+							Name: "test-folder",
+							RoleBindingTemplates: []rbacv1alpha1.RoleBindingTemplate{
+								{
+									Name: "admin",
+									Subjects: []rbacv1.Subject{
+										{
+											Kind:     "Group",
+											Name:     "test-group",
+											APIGroup: "rbac.authorization.k8s.io",
+										},
+									},
+									RoleRef: rbacv1.RoleRef{
+										Kind:     "ClusterRole",
+										Name:     "edit", // Changed from 'view' to 'edit'
+										APIGroup: "rbac.authorization.k8s.io",
+									},
+								},
+							},
+							Namespaces: []string{"test-ns"},
+						},
+					},
+				},
+			}
+
+			builder = &RoleBindingBuilder{FolderTree: folderTree, Scheme: scheme}
+			diffAnalyzer = NewDiffAnalyzer(fakeClient, folderTree, builder)
+
+			operations, err := diffAnalyzer.AnalyzeDiff(ctx)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Should generate DELETE+CREATE operations (not UPDATE)
+			Expect(operations).To(HaveLen(2))
+
+			// Find DELETE and CREATE operations
+			var deleteOp, createOp *RoleBindingOperation
+			for i := range operations {
+				switch operations[i].Type {
+				case OperationDelete:
+					deleteOp = &operations[i]
+				case OperationCreate:
+					createOp = &operations[i]
+				}
+			}
+
+			// Verify DELETE operation
+			Expect(deleteOp).NotTo(BeNil())
+			Expect(deleteOp.Type).To(Equal(OperationDelete))
+			Expect(deleteOp.ExistingRoleBinding.Name).To(Equal("foldertree-test-admin"))
+			Expect(deleteOp.ExistingRoleBinding.RoleRef.Name).To(Equal("view"))
+
+			// Verify CREATE operation
+			Expect(createOp).NotTo(BeNil())
+			Expect(createOp.Type).To(Equal(OperationCreate))
+			Expect(createOp.DesiredRoleBinding.Name).To(Equal("foldertree-test-admin"))
+			Expect(createOp.DesiredRoleBinding.RoleRef.Name).To(Equal("edit"))
+		})
+
+		It("should generate UPDATE operation when only subjects change (roleRef unchanged)", func() {
+			// Create existing RoleBinding
+			existingRB := &rbacv1.RoleBinding{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "foldertree-test-admin",
+					Namespace: "test-ns",
+					Labels: map[string]string{
+						"foldertree.rbac.kubevirt.io/tree": "test",
+					},
+				},
+				Subjects: []rbacv1.Subject{
+					{
+						Kind:     "Group",
+						Name:     "old-group", // Original subject
+						APIGroup: "rbac.authorization.k8s.io",
+					},
+				},
+				RoleRef: rbacv1.RoleRef{
+					Kind:     "ClusterRole",
+					Name:     "view", // Same roleRef
+					APIGroup: "rbac.authorization.k8s.io",
+				},
+			}
+
+			fakeClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(existingRB).Build()
+
+			// Create FolderTree with changed subjects but same roleRef
+			folderTree = &rbacv1alpha1.FolderTree{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: rbacv1alpha1.FolderTreeSpec{
+					Folders: []rbacv1alpha1.Folder{
+						{
+							Name: "test-folder",
+							RoleBindingTemplates: []rbacv1alpha1.RoleBindingTemplate{
+								{
+									Name: "admin",
+									Subjects: []rbacv1.Subject{
+										{
+											Kind:     "Group",
+											Name:     "new-group", // Changed subject
+											APIGroup: "rbac.authorization.k8s.io",
+										},
+									},
+									RoleRef: rbacv1.RoleRef{
+										Kind:     "ClusterRole",
+										Name:     "view", // Same roleRef
+										APIGroup: "rbac.authorization.k8s.io",
+									},
+								},
+							},
+							Namespaces: []string{"test-ns"},
+						},
+					},
+				},
+			}
+
+			builder = &RoleBindingBuilder{FolderTree: folderTree, Scheme: scheme}
+			diffAnalyzer = NewDiffAnalyzer(fakeClient, folderTree, builder)
+
+			operations, err := diffAnalyzer.AnalyzeDiff(ctx)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Should generate single UPDATE operation (not DELETE+CREATE)
+			Expect(operations).To(HaveLen(1))
+			Expect(operations[0].Type).To(Equal(OperationUpdate))
+			Expect(operations[0].ExistingRoleBinding.RoleRef.Name).To(Equal("view"))
+			Expect(operations[0].DesiredRoleBinding.RoleRef.Name).To(Equal("view"))
+			Expect(operations[0].DesiredRoleBinding.Subjects[0].Name).To(Equal("new-group"))
+		})
+	})
 })
