@@ -6,7 +6,7 @@ on:
 
 jobs:
   test:
-    name: Run on Ubuntu
+    name: Unit Tests
     runs-on: ubuntu-latest
     steps:
       - name: Clone the code
@@ -17,7 +17,26 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
       - name: Running Tests
         run: |
           go mod tidy
           make test
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./cover.out
+          flags: unittests
+          name: codecov-umbrella
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
