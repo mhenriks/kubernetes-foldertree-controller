@@ -51,7 +51,7 @@ func SetupFolderTreeWebhookWithManager(mgr ctrl.Manager) error {
 // and cross-resource validation that cannot be enforced by OpenAPI schema alone.
 // NOTE: The 'path' attribute must follow a specific pattern and should not be modified directly here.
 // Modifying the path for an invalid path can cause API server errors; failing to locate the webhook.
-// +kubebuilder:webhook:path=/validate-rbac-kubevirt-io-v1alpha1-foldertree,mutating=false,failurePolicy=fail,sideEffects=None,groups=rbac.kubevirt.io,resources=foldertrees,verbs=create;update;delete,versions=v1alpha1,name=vfoldertree-v1alpha1.kb.io,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/validate-rbac-kubevirt-io-v1alpha1-foldertree,mutating=false,failurePolicy=fail,sideEffects=None,groups=rbac.kubevirt.io,resources=foldertrees,verbs=create;update;delete,versions=v1alpha1,name=foldertree.rbac.kubevirt.io,admissionReviewVersions=v1
 
 // FolderTreeCustomValidator struct is responsible for validating the FolderTree resource
 // when it is created, updated, or deleted. It validates the split structure design where:

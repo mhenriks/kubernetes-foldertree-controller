@@ -12,7 +12,7 @@ webhooks:
       namespace: system
       path: /validate-rbac-kubevirt-io-v1alpha1-foldertree
   failurePolicy: Fail
-  name: vfoldertree-v1alpha1.kb.io
+  name: foldertree.rbac.kubevirt.io
   rules:
   - apiGroups:
     - rbac.kubevirt.io

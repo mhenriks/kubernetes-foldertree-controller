@@ -600,7 +600,7 @@ make manifests && make deploy
 ```yaml
 # config/webhook/manifests.yaml
 webhooks:
-- name: vfoldertree-v1alpha1.kb.io
+- name: foldertree.rbac.kubevirt.io
   failurePolicy: Fail  # Change to Ignore for non-critical environments
   sideEffects: None
 ```
