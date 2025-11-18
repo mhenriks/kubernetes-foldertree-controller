@@ -86,7 +86,9 @@ setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
 	esac
 
 .PHONY: test-e2e
-test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
+test-e2e: setup-test-e2e manifests generate fmt vet docker-build ## Run the e2e tests. Expected an isolated environment using Kind.
+	@echo "Loading Docker image into Kind cluster..."
+	$(KIND) load docker-image ${IMG} --name $(KIND_CLUSTER)
 	KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -ginkgo.v
 	$(MAKE) cleanup-test-e2e
 

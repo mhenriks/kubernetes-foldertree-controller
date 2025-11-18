@@ -21,12 +21,22 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	rbacv1alpha1 "kubevirt.io/folders/api/v1alpha1"
 	"kubevirt.io/folders/internal/rbac"
 )
+
+// createTestNamespace creates a simple Namespace object for testing
+func createTestNamespace(name string) *corev1.Namespace {
+	return &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+	}
+}
 
 var _ = Describe("FolderTree Webhook", func() {
 	var (
@@ -39,6 +49,16 @@ var _ = Describe("FolderTree Webhook", func() {
 		ctx = context.Background()
 		obj = &rbacv1alpha1.FolderTree{}
 		validator = FolderTreeCustomValidator{Client: k8sClient}
+
+		// Create common test namespaces used by multiple tests
+		commonNsNames := []string{
+			"test-ns", "child-ns", "frontend-ns", "backend-ns",
+			"child1-ns", "child2-ns", "tree-ns", "standalone-ns",
+		}
+		for _, name := range commonNsNames {
+			ns := createTestNamespace(name)
+			_ = k8sClient.Create(ctx, ns) // Ignore error if already exists
+		}
 	})
 
 	Context("Inline Role Binding Templates Validation", func() {
@@ -1534,6 +1554,210 @@ var _ = Describe("FolderTree Webhook", func() {
 			otherNsGroup := groups["other-ns/other-rb"]
 			Expect(otherNsGroup).To(HaveLen(1))
 			Expect(otherNsGroup[0].Type).To(Equal(rbac.OperationCreate))
+		})
+	})
+
+	Context("Namespace Existence Validation", func() {
+		It("should validate collectNamespaces helper function", func() {
+			// Test with nil FolderTree
+			namespaces := validator.collectNamespaces(nil)
+			Expect(namespaces).To(BeEmpty())
+
+			// Test with FolderTree containing namespaces
+			ft := &rbacv1alpha1.FolderTree{
+				Spec: rbacv1alpha1.FolderTreeSpec{
+					Folders: []rbacv1alpha1.Folder{
+						{
+							Name:       "folder1",
+							Namespaces: []string{"ns1", "ns2"},
+						},
+						{
+							Name:       "folder2",
+							Namespaces: []string{"ns3"},
+						},
+					},
+				},
+			}
+
+			namespaces = validator.collectNamespaces(ft)
+			Expect(namespaces).To(HaveLen(3))
+			Expect(namespaces["ns1"]).To(BeTrue())
+			Expect(namespaces["ns2"]).To(BeTrue())
+			Expect(namespaces["ns3"]).To(BeTrue())
+		})
+
+		It("should reject CREATE when namespace doesn't exist", func() {
+			obj.ObjectMeta.Name = "test-nonexistent-ns"
+			obj.Spec = rbacv1alpha1.FolderTreeSpec{
+				Folders: []rbacv1alpha1.Folder{
+					{
+						Name: "test-folder",
+						RoleBindingTemplates: []rbacv1alpha1.RoleBindingTemplate{
+							{
+								Name: "test-template",
+								Subjects: []rbacv1.Subject{
+									{
+										Kind:     "User",
+										Name:     "test-user",
+										APIGroup: "rbac.authorization.k8s.io",
+									},
+								},
+								RoleRef: rbacv1.RoleRef{
+									APIGroup: "rbac.authorization.k8s.io",
+									Kind:     "ClusterRole",
+									Name:     "view",
+								},
+							},
+						},
+						Namespaces: []string{"namespace-that-absolutely-does-not-exist"},
+					},
+				},
+			}
+
+			// Should fail because namespace doesn't exist
+			warnings, err := validator.ValidateCreate(ctx, obj)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("does not exist"))
+			Expect(err.Error()).To(ContainSubstring("cannot add non-existent namespace"))
+			Expect(warnings).To(BeEmpty())
+		})
+
+		It("should allow UPDATE when namespace was in old tree (simulating deleted namespace)", func() {
+			// Simulate old FolderTree that had a namespace (now deleted)
+			oldObj := &rbacv1alpha1.FolderTree{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-tree"},
+				Spec: rbacv1alpha1.FolderTreeSpec{
+					Folders: []rbacv1alpha1.Folder{
+						{
+							Name: "test-folder",
+							RoleBindingTemplates: []rbacv1alpha1.RoleBindingTemplate{
+								{
+									Name: "test-template",
+									Subjects: []rbacv1.Subject{
+										{
+											Kind:     "User",
+											Name:     "test-user",
+											APIGroup: "rbac.authorization.k8s.io",
+										},
+									},
+									RoleRef: rbacv1.RoleRef{
+										APIGroup: "rbac.authorization.k8s.io",
+										Kind:     "ClusterRole",
+										Name:     "view",
+									},
+								},
+							},
+							Namespaces: []string{"deleted-namespace-from-old-tree"},
+						},
+					},
+				},
+			}
+
+			// New FolderTree with same namespace (but namespace was deleted externally)
+			newObj := oldObj.DeepCopy()
+			newObj.Spec.Folders[0].RoleBindingTemplates = append(
+				newObj.Spec.Folders[0].RoleBindingTemplates,
+				rbacv1alpha1.RoleBindingTemplate{
+					Name: "additional-template",
+					Subjects: []rbacv1.Subject{
+						{
+							Kind:     "Group",
+							Name:     "test-group",
+							APIGroup: "rbac.authorization.k8s.io",
+						},
+					},
+					RoleRef: rbacv1.RoleRef{
+						APIGroup: "rbac.authorization.k8s.io",
+						Kind:     "ClusterRole",
+						Name:     "edit",
+					},
+				},
+			)
+
+			// validateNamespacesExist should succeed because namespace was in old tree
+			err := validator.validateNamespacesExist(ctx, newObj, oldObj)
+			Expect(err).NotTo(HaveOccurred(), "Should allow update with deleted namespace that was in old tree")
+		})
+
+		It("should reject UPDATE when adding NEW namespace that doesn't exist", func() {
+			// Old FolderTree with one namespace
+			oldObj := &rbacv1alpha1.FolderTree{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-tree"},
+				Spec: rbacv1alpha1.FolderTreeSpec{
+					Folders: []rbacv1alpha1.Folder{
+						{
+							Name: "test-folder",
+							RoleBindingTemplates: []rbacv1alpha1.RoleBindingTemplate{
+								{
+									Name: "test-template",
+									Subjects: []rbacv1.Subject{
+										{
+											Kind:     "User",
+											Name:     "test-user",
+											APIGroup: "rbac.authorization.k8s.io",
+										},
+									},
+									RoleRef: rbacv1.RoleRef{
+										APIGroup: "rbac.authorization.k8s.io",
+										Kind:     "ClusterRole",
+										Name:     "view",
+									},
+								},
+							},
+							Namespaces: []string{"existing-namespace-in-old"},
+						},
+					},
+				},
+			}
+
+			// New FolderTree adding a non-existent namespace
+			newObj := oldObj.DeepCopy()
+			newObj.Spec.Folders[0].Namespaces = append(
+				newObj.Spec.Folders[0].Namespaces,
+				"brand-new-nonexistent-namespace",
+			)
+
+			// validateNamespacesExist should fail because new namespace doesn't exist
+			err := validator.validateNamespacesExist(ctx, newObj, oldObj)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("does not exist"))
+			Expect(err.Error()).To(ContainSubstring("brand-new-nonexistent-namespace"))
+		})
+
+		It("should allow DELETE when namespace was deleted", func() {
+			// Simulate FolderTree with a namespace that was deleted
+			obj.ObjectMeta.Name = "test-tree-for-deletion"
+			obj.Spec = rbacv1alpha1.FolderTreeSpec{
+				Folders: []rbacv1alpha1.Folder{
+					{
+						Name: "test-folder",
+						RoleBindingTemplates: []rbacv1alpha1.RoleBindingTemplate{
+							{
+								Name: "test-template",
+								Subjects: []rbacv1.Subject{
+									{
+										Kind:     "User",
+										Name:     "test-user",
+										APIGroup: "rbac.authorization.k8s.io",
+									},
+								},
+								RoleRef: rbacv1.RoleRef{
+									APIGroup: "rbac.authorization.k8s.io",
+									Kind:     "ClusterRole",
+									Name:     "view",
+								},
+							},
+						},
+						Namespaces: []string{"deleted-namespace-for-delete-test"},
+					},
+				},
+			}
+
+			// ValidateDelete should succeed even though namespace doesn't exist
+			// The validateDeleteOperation() method checks namespace existence and skips if not found
+			warnings, err := validator.ValidateDelete(ctx, obj)
+			Expect(err).NotTo(HaveOccurred(), "Should allow DELETE even when namespace was deleted")
+			Expect(warnings).To(BeEmpty())
 		})
 	})
 })

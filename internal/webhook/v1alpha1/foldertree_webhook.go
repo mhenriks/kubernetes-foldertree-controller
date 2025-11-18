@@ -22,7 +22,10 @@ import (
 	"regexp"
 
 	authenticationv1 "k8s.io/api/authentication/v1"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -104,6 +107,11 @@ func (v *FolderTreeCustomValidator) ValidateCreate(ctx context.Context, obj runt
 		return nil, err
 	}
 
+	// Validate that all namespaces exist (for CREATE, all namespaces are "new")
+	if err := v.validateNamespacesExist(ctx, foldertree, nil); err != nil {
+		return nil, err
+	}
+
 	// Validate RBAC authorization (privilege escalation check)
 	if err := v.validateRBACAuthorization(ctx, foldertree); err != nil {
 		return nil, err
@@ -140,6 +148,11 @@ func (v *FolderTreeCustomValidator) ValidateUpdate(ctx context.Context, oldObj, 
 
 	// Check for conflicts with other FolderTrees (excluding this one)
 	if err := v.validateGlobalUniqueness(ctx, newFolderTree); err != nil {
+		return nil, err
+	}
+
+	// Validate that new namespaces exist (only NEW namespaces must exist)
+	if err := v.validateNamespacesExist(ctx, newFolderTree, oldFolderTree); err != nil {
 		return nil, err
 	}
 
@@ -745,6 +758,50 @@ func (v *FolderTreeCustomValidator) validateGlobalUniqueness(ctx context.Context
 	return nil
 }
 
+// validateNamespacesExist validates that new namespaces being added to the FolderTree exist.
+// For CREATE operations (oldFolderTree is nil), all namespaces are considered "new".
+// For UPDATE operations, only namespaces not in oldFolderTree are considered "new" and must exist.
+// Existing namespaces (already in oldFolderTree) are allowed to not exist.
+func (v *FolderTreeCustomValidator) validateNamespacesExist(ctx context.Context, newFolderTree, oldFolderTree *rbacv1alpha1.FolderTree) error {
+	// Collect namespaces from old state
+	oldNamespaces := v.collectNamespaces(oldFolderTree)
+
+	// Check each namespace in the new FolderTree
+	var allErrors field.ErrorList
+	for i, folder := range newFolderTree.Spec.Folders {
+		for j, ns := range folder.Namespaces {
+			// Check if this is a NEW namespace (not in old tree)
+			wasInOldTree := oldNamespaces[ns]
+			if !wasInOldTree {
+				// New namespace - must exist
+				namespace := &corev1.Namespace{}
+				err := v.Client.Get(ctx, types.NamespacedName{Name: ns}, namespace)
+				if err != nil {
+					if apierrors.IsNotFound(err) {
+						allErrors = append(allErrors, field.Invalid(
+							field.NewPath("spec", "folders").Index(i).Child("namespaces").Index(j),
+							ns,
+							fmt.Sprintf("namespace '%s' does not exist - cannot add non-existent namespace to FolderTree", ns)))
+					} else {
+						// Other error
+						allErrors = append(allErrors, field.InternalError(
+							field.NewPath("spec", "folders").Index(i).Child("namespaces").Index(j),
+							fmt.Errorf("failed to check namespace existence: %v", err)))
+					}
+				}
+			}
+			// If namespace was in old tree, we don't check existence
+			// (allows updates when namespace was deleted)
+		}
+	}
+
+	if len(allErrors) > 0 {
+		return allErrors.ToAggregate()
+	}
+
+	return nil
+}
+
 // validateRBACAuthorization checks that the user has permissions to perform the specific operations
 // that would be required to synchronize the FolderTree. This prevents privilege escalation and
 // validates deletion permissions when namespaces or rolebindingtemplates are removed.
@@ -786,7 +843,7 @@ func (v *FolderTreeCustomValidator) validateRBACAuthorizationUpdate(ctx context.
 	}
 
 	// Validate user has permission for these specific operations
-	if err := v.validateOperationsWithImpersonation(ctx, operations, req.UserInfo); err != nil {
+	if err := v.validateOperationsWithImpersonation(ctx, operations, req.UserInfo, oldFolderTree); err != nil {
 		return fmt.Errorf("privilege escalation prevented: %v", err)
 	}
 
@@ -796,24 +853,46 @@ func (v *FolderTreeCustomValidator) validateRBACAuthorizationUpdate(ctx context.
 // validateOperationsWithImpersonation performs privilege escalation validation
 // by impersonating the user and attempting to perform the required operations with dry-run.
 // Handles DELETE+CREATE pairs specially to avoid dry-run conflicts with immutable roleRef.
-func (v *FolderTreeCustomValidator) validateOperationsWithImpersonation(ctx context.Context, operations []rbac.RoleBindingOperation, userInfo authenticationv1.UserInfo) error {
+// Handles deleted namespaces by skipping validation for namespaces that already existed in the tree
+// but requiring new namespaces to exist and have proper permissions.
+func (v *FolderTreeCustomValidator) validateOperationsWithImpersonation(ctx context.Context, operations []rbac.RoleBindingOperation, userInfo authenticationv1.UserInfo, oldFolderTree *rbacv1alpha1.FolderTree) error {
 	// Create an impersonation client for the requesting user
 	impersonationClient, err := v.createImpersonationClient(userInfo)
 	if err != nil {
 		return fmt.Errorf("failed to create impersonation client: %v", err)
 	}
 
+	// Collect namespaces from old state to determine which are newly added
+	oldNamespaces := v.collectNamespaces(oldFolderTree)
+
 	// Group operations by namespace/name to detect DELETE+CREATE pairs
 	operationGroups := v.groupOperationsByTarget(operations)
 
 	// Validate each group of operations
 	for target, ops := range operationGroups {
-		if err := v.validateOperationGroup(ctx, impersonationClient, target, ops); err != nil {
+		if err := v.validateOperationGroup(ctx, impersonationClient, ops, oldNamespaces); err != nil {
 			return fmt.Errorf("failed to validate operations for %s: %v", target, err)
 		}
 	}
 
 	return nil
+}
+
+// collectNamespaces gathers all namespaces from a FolderTree spec.
+// Returns a map where keys are namespace names that exist in the FolderTree.
+// Used to determine if a namespace is "new" (not in old tree) or "existing" (in old tree).
+func (v *FolderTreeCustomValidator) collectNamespaces(folderTree *rbacv1alpha1.FolderTree) map[string]bool {
+	namespaces := make(map[string]bool)
+	if folderTree == nil {
+		return namespaces
+	}
+
+	for _, folder := range folderTree.Spec.Folders {
+		for _, ns := range folder.Namespaces {
+			namespaces[ns] = true
+		}
+	}
+	return namespaces
 }
 
 // createImpersonationClient creates a Kubernetes client that impersonates the specified user
@@ -862,8 +941,9 @@ func (v *FolderTreeCustomValidator) groupOperationsByTarget(operations []rbac.Ro
 }
 
 // validateOperationGroup validates a group of operations for the same target RoleBinding
-// Handles DELETE+CREATE pairs specially to avoid dry-run conflicts with immutable roleRef
-func (v *FolderTreeCustomValidator) validateOperationGroup(ctx context.Context, impersonationClient client.Client, target string, operations []rbac.RoleBindingOperation) error {
+// Handles DELETE+CREATE pairs specially to avoid dry-run conflicts with immutable roleRef.
+// Uses oldNamespaces to determine if a namespace is newly added or already existed in the tree.
+func (v *FolderTreeCustomValidator) validateOperationGroup(ctx context.Context, impersonationClient client.Client, operations []rbac.RoleBindingOperation, oldNamespaces map[string]bool) error {
 	// Check if this is a DELETE+CREATE pair (roleRef change scenario)
 	if len(operations) == 2 {
 		var deleteOp, createOp *rbac.RoleBindingOperation
@@ -878,13 +958,15 @@ func (v *FolderTreeCustomValidator) validateOperationGroup(ctx context.Context, 
 
 		if deleteOp != nil && createOp != nil {
 			// This is a DELETE+CREATE pair - handle specially
-			return v.validateDeleteCreatePair(ctx, impersonationClient, *deleteOp, *createOp)
+			wasInOldTree := oldNamespaces[deleteOp.Namespace]
+			return v.validateDeleteCreatePair(ctx, impersonationClient, *deleteOp, *createOp, wasInOldTree)
 		}
 	}
 
 	// Not a DELETE+CREATE pair - validate operations individually
 	for _, operation := range operations {
-		if err := v.validateSingleOperation(ctx, impersonationClient, operation); err != nil {
+		wasInOldTree := oldNamespaces[operation.Namespace]
+		if err := v.validateSingleOperation(ctx, impersonationClient, operation, wasInOldTree); err != nil {
 			return fmt.Errorf("failed to validate %s: %v", operation.String(), err)
 		}
 	}
@@ -893,8 +975,9 @@ func (v *FolderTreeCustomValidator) validateOperationGroup(ctx context.Context, 
 }
 
 // validateDeleteCreatePair validates DELETE+CREATE operations for the same RoleBinding
-// Uses temporary unique name for CREATE validation to avoid dry-run conflicts
-func (v *FolderTreeCustomValidator) validateDeleteCreatePair(ctx context.Context, impersonationClient client.Client, deleteOp, createOp rbac.RoleBindingOperation) error {
+// Uses temporary unique name for CREATE validation to avoid dry-run conflicts.
+// Handles deleted namespaces by checking existence before validation.
+func (v *FolderTreeCustomValidator) validateDeleteCreatePair(ctx context.Context, impersonationClient client.Client, deleteOp, createOp rbac.RoleBindingOperation, wasInOldTree bool) error {
 	// Validate DELETE of existing RoleBinding
 	if err := v.validateDeleteOperation(ctx, impersonationClient, deleteOp); err != nil {
 		return fmt.Errorf("failed to validate DELETE operation: %v", err)
@@ -908,18 +991,20 @@ func (v *FolderTreeCustomValidator) validateDeleteCreatePair(ctx context.Context
 	originalName := createOp.DesiredRoleBinding.Name
 	tempCreateOp.DesiredRoleBinding.Name = rbac.GenerateRandomRoleBindingName(originalName, "validation")
 
-	if err := v.validateCreateOperation(ctx, impersonationClient, tempCreateOp); err != nil {
+	if err := v.validateCreateOperation(ctx, impersonationClient, tempCreateOp, wasInOldTree); err != nil {
 		return fmt.Errorf("failed to validate CREATE operation: %v", err)
 	}
 
 	return nil
 }
 
-// validateSingleOperation validates a single RoleBinding operation with impersonation + dry-run
-func (v *FolderTreeCustomValidator) validateSingleOperation(ctx context.Context, impersonationClient client.Client, operation rbac.RoleBindingOperation) error {
+// validateSingleOperation validates a single RoleBinding operation with impersonation + dry-run.
+// Checks namespace existence and handles deleted namespaces appropriately based on whether
+// the namespace was in the old tree or is newly added.
+func (v *FolderTreeCustomValidator) validateSingleOperation(ctx context.Context, impersonationClient client.Client, operation rbac.RoleBindingOperation, wasInOldTree bool) error {
 	switch operation.Type {
 	case rbac.OperationCreate:
-		return v.validateCreateOperation(ctx, impersonationClient, operation)
+		return v.validateCreateOperation(ctx, impersonationClient, operation, wasInOldTree)
 	case rbac.OperationUpdate:
 		return v.validateUpdateOperation(ctx, impersonationClient, operation)
 	case rbac.OperationDelete:
@@ -929,8 +1014,32 @@ func (v *FolderTreeCustomValidator) validateSingleOperation(ctx context.Context,
 	}
 }
 
-// validateCreateOperation validates that the user can create the RoleBinding
-func (v *FolderTreeCustomValidator) validateCreateOperation(ctx context.Context, impersonationClient client.Client, operation rbac.RoleBindingOperation) error {
+// validateCreateOperation validates that the user can create the RoleBinding.
+// For NEW namespaces (not in old tree), validates that the namespace exists and user has permissions.
+// For EXISTING namespaces (in old tree), skips validation if namespace was deleted externally.
+func (v *FolderTreeCustomValidator) validateCreateOperation(ctx context.Context, impersonationClient client.Client, operation rbac.RoleBindingOperation, wasInOldTree bool) error {
+	// Check if namespace exists
+	ns := &corev1.Namespace{}
+	err := v.Client.Get(ctx, types.NamespacedName{Name: operation.Namespace}, ns)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			// Namespace doesn't exist
+			if !wasInOldTree {
+				// NEW namespace being added - must exist
+				return fmt.Errorf("namespace '%s' does not exist - cannot add non-existent namespace to FolderTree", operation.Namespace)
+			}
+			// Namespace was already in tree but got deleted externally - skip validation
+			// The controller will also skip creating the RoleBinding until namespace is recreated
+			foldertreelog.Info("Skipping validation for CREATE in non-existent namespace that was already in tree",
+				"namespace", operation.Namespace,
+				"rolebinding", operation.DesiredRoleBinding.Name)
+			return nil
+		}
+		// Other error (not NotFound)
+		return fmt.Errorf("failed to check namespace existence: %v", err)
+	}
+
+	// Namespace exists - validate permissions as normal
 	// Use a random name to avoid conflicts during dry-run
 	testRoleBinding := operation.DesiredRoleBinding.DeepCopy()
 	testRoleBinding.Name = rbac.GenerateRandomRoleBindingName(testRoleBinding.Name, operation.RoleBindingTemplate.Name)
@@ -943,8 +1052,25 @@ func (v *FolderTreeCustomValidator) validateCreateOperation(ctx context.Context,
 	return nil
 }
 
-// validateUpdateOperation validates that the user can update the RoleBinding
+// validateUpdateOperation validates that the user can update the RoleBinding.
+// Skips validation if the namespace was deleted externally.
 func (v *FolderTreeCustomValidator) validateUpdateOperation(ctx context.Context, impersonationClient client.Client, operation rbac.RoleBindingOperation) error {
+	// Check if namespace still exists
+	ns := &corev1.Namespace{}
+	err := v.Client.Get(ctx, types.NamespacedName{Name: operation.Namespace}, ns)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			// Namespace was deleted - skip validation
+			// The controller won't be able to update the RoleBinding anyway since namespace is gone
+			foldertreelog.Info("Skipping validation for UPDATE in deleted namespace",
+				"namespace", operation.Namespace,
+				"rolebinding", operation.ExistingRoleBinding.Name)
+			return nil
+		}
+		return fmt.Errorf("failed to check namespace existence: %v", err)
+	}
+
+	// Namespace exists - proceed with normal validation
 	// Create a copy of the existing RoleBinding with the desired changes
 	testRoleBinding := operation.ExistingRoleBinding.DeepCopy()
 	testRoleBinding.Subjects = operation.DesiredRoleBinding.Subjects
@@ -1008,10 +1134,48 @@ func (v *FolderTreeCustomValidator) validateRBACAuthorizationDelete(ctx context.
 	return nil
 }
 
-// validateDeleteOperation validates that the user can delete the RoleBinding
+// validateDeleteOperation validates that the user can delete the RoleBinding.
+// Skips validation if the namespace or RoleBinding was already deleted.
+// This is critical for allowing FolderTree deletion when namespaces have been removed.
 func (v *FolderTreeCustomValidator) validateDeleteOperation(ctx context.Context, impersonationClient client.Client, operation rbac.RoleBindingOperation) error {
+	// Check if namespace still exists
+	ns := &corev1.Namespace{}
+	err := v.Client.Get(ctx, types.NamespacedName{Name: operation.Namespace}, ns)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			// Namespace was deleted - RoleBinding is already gone
+			// No need to validate delete permission for something that doesn't exist
+			foldertreelog.Info("Skipping DELETE validation for non-existent namespace",
+				"namespace", operation.Namespace,
+				"rolebinding", operation.ExistingRoleBinding.Name)
+			return nil
+		}
+		return fmt.Errorf("failed to check namespace existence: %v", err)
+	}
+
+	// Namespace exists - check if RoleBinding still exists
+	// (it might have been manually deleted even though namespace still exists)
+	existingRB := operation.ExistingRoleBinding.DeepCopy()
+	err = v.Client.Get(ctx,
+		types.NamespacedName{
+			Name:      operation.ExistingRoleBinding.Name,
+			Namespace: operation.Namespace,
+		},
+		existingRB)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			// RoleBinding already deleted - no validation needed
+			foldertreelog.Info("Skipping DELETE validation for non-existent RoleBinding",
+				"namespace", operation.Namespace,
+				"rolebinding", operation.ExistingRoleBinding.Name)
+			return nil
+		}
+		return fmt.Errorf("failed to check RoleBinding existence: %v", err)
+	}
+
+	// Both namespace and RoleBinding exist - validate delete permission
 	// Attempt to delete with dry-run using impersonation
-	if err := impersonationClient.Delete(ctx, operation.ExistingRoleBinding, client.DryRunAll); err != nil {
+	if err := impersonationClient.Delete(ctx, existingRB, client.DryRunAll); err != nil {
 		return fmt.Errorf("dry-run deletion failed (user lacks required permissions): %v", err)
 	}
 

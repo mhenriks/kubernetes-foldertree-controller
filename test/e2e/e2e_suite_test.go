@@ -39,7 +39,8 @@ var (
 
 	// projectImage is the name of the image which will be build and loaded
 	// with the code source changes to be tested.
-	projectImage = "example.com/folders:v0.0.1"
+	// This matches the default image in config/manager/kustomization.yaml to avoid file modifications.
+	projectImage = "ghcr.io/mhenriks/foldertree-controller:latest"
 )
 
 // TestE2E runs the end-to-end (e2e) test suite for the project. These tests execute in an isolated,

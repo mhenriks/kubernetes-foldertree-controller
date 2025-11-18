@@ -1090,6 +1090,245 @@ spec:
 				})
 			})
 
+			Context("Namespace Lifecycle Management", func() {
+				It("should reject FolderTree creation with non-existent namespace", func() {
+					By("attempting to create FolderTree with non-existent namespace")
+					nonExistentNsYAML := `
+apiVersion: rbac.kubevirt.io/v1alpha1
+kind: FolderTree
+metadata:
+  name: nonexistent-ns-test
+spec:
+  folders:
+  - name: test-folder
+    roleBindingTemplates:
+    - name: test-role
+      subjects:
+      - kind: Group
+        name: test-group
+        apiGroup: rbac.authorization.k8s.io
+      roleRef:
+        kind: ClusterRole
+        name: view
+        apiGroup: rbac.authorization.k8s.io
+    namespaces: ["namespace-that-does-not-exist"]
+`
+
+					cmd := exec.Command("kubectl", "apply", "-f", "-")
+					cmd.Stdin = strings.NewReader(nonExistentNsYAML)
+					_, err := utils.Run(cmd)
+					Expect(err).To(HaveOccurred(), "Should reject FolderTree with non-existent namespace")
+					// Error message may vary slightly between validation layers
+					Expect(err.Error()).To(Or(
+						ContainSubstring("does not exist"),
+						ContainSubstring("not found"),
+					))
+				})
+
+				It("should allow FolderTree creation with existing namespace", func() {
+					By("creating FolderTree with existing namespace")
+					existingNsYAML := `
+apiVersion: rbac.kubevirt.io/v1alpha1
+kind: FolderTree
+metadata:
+  name: existing-ns-test
+spec:
+  folders:
+  - name: test-folder
+    roleBindingTemplates:
+    - name: test-role
+      subjects:
+      - kind: Group
+        name: test-group
+        apiGroup: rbac.authorization.k8s.io
+      roleRef:
+        kind: ClusterRole
+        name: view
+        apiGroup: rbac.authorization.k8s.io
+    namespaces: ["ft-test-sandbox"]
+`
+
+					cmd := exec.Command("kubectl", "apply", "-f", "-")
+					cmd.Stdin = strings.NewReader(existingNsYAML)
+					_, err := utils.Run(cmd)
+					Expect(err).NotTo(HaveOccurred(), "Should allow FolderTree with existing namespace")
+
+					By("verifying RoleBinding was created")
+					Eventually(func(g Gomega) {
+						cmd := exec.Command("kubectl", "get", "rolebindings", "-n", "ft-test-sandbox",
+							"-l", "foldertree.rbac.kubevirt.io/tree=existing-ns-test")
+						output, err := utils.Run(cmd)
+						g.Expect(err).NotTo(HaveOccurred())
+						g.Expect(output).To(ContainSubstring("test-role"))
+					}).Should(Succeed())
+
+					By("cleaning up")
+					utils.Run(exec.Command("kubectl", "delete", "foldertree", "existing-ns-test", "--ignore-not-found"))
+				})
+
+				It("should reject adding NEW non-existent namespace to existing FolderTree", func() {
+					By("creating FolderTree with existing namespace")
+					initialYAML := `
+apiVersion: rbac.kubevirt.io/v1alpha1
+kind: FolderTree
+metadata:
+  name: add-ns-test
+spec:
+  folders:
+  - name: test-folder
+    roleBindingTemplates:
+    - name: test-role
+      subjects:
+      - kind: Group
+        name: test-group
+        apiGroup: rbac.authorization.k8s.io
+      roleRef:
+        kind: ClusterRole
+        name: view
+        apiGroup: rbac.authorization.k8s.io
+    namespaces: ["ft-test-sandbox"]
+`
+
+					cmd := exec.Command("kubectl", "apply", "-f", "-")
+					cmd.Stdin = strings.NewReader(initialYAML)
+					_, err := utils.Run(cmd)
+					Expect(err).NotTo(HaveOccurred(), "Failed to create initial FolderTree")
+
+					By("attempting to add non-existent namespace")
+					updatedYAML := `
+apiVersion: rbac.kubevirt.io/v1alpha1
+kind: FolderTree
+metadata:
+  name: add-ns-test
+spec:
+  folders:
+  - name: test-folder
+    roleBindingTemplates:
+    - name: test-role
+      subjects:
+      - kind: Group
+        name: test-group
+        apiGroup: rbac.authorization.k8s.io
+      roleRef:
+        kind: ClusterRole
+        name: view
+        apiGroup: rbac.authorization.k8s.io
+    namespaces: ["ft-test-sandbox", "new-nonexistent-namespace"]
+`
+
+					cmd = exec.Command("kubectl", "apply", "-f", "-")
+					cmd.Stdin = strings.NewReader(updatedYAML)
+					_, err = utils.Run(cmd)
+					Expect(err).To(HaveOccurred(), "Should reject adding non-existent namespace")
+					Expect(err.Error()).To(Or(
+						ContainSubstring("does not exist"),
+						ContainSubstring("not found"),
+					))
+
+					By("cleaning up")
+					utils.Run(exec.Command("kubectl", "delete", "foldertree", "add-ns-test", "--ignore-not-found"))
+				})
+
+				It("should allow update when namespace was deleted", func() {
+					By("creating a dedicated test namespace")
+					deletableNs := "ft-test-deletable"
+					cmd := exec.Command("kubectl", "create", "namespace", deletableNs)
+					_, err := utils.Run(cmd)
+					Expect(err).NotTo(HaveOccurred(), "Failed to create test namespace")
+
+					By("creating FolderTree with the namespace")
+					initialYAML := fmt.Sprintf(`
+apiVersion: rbac.kubevirt.io/v1alpha1
+kind: FolderTree
+metadata:
+  name: deleted-ns-test
+spec:
+  folders:
+  - name: test-folder
+    roleBindingTemplates:
+    - name: test-role
+      subjects:
+      - kind: Group
+        name: test-group
+        apiGroup: rbac.authorization.k8s.io
+      roleRef:
+        kind: ClusterRole
+        name: view
+        apiGroup: rbac.authorization.k8s.io
+    namespaces: ["%s"]
+`, deletableNs)
+
+					cmd = exec.Command("kubectl", "apply", "-f", "-")
+					cmd.Stdin = strings.NewReader(initialYAML)
+					_, err = utils.Run(cmd)
+					Expect(err).NotTo(HaveOccurred(), "Failed to create initial FolderTree")
+
+					By("verifying RoleBinding was created")
+					Eventually(func(g Gomega) {
+						cmd := exec.Command("kubectl", "get", "rolebindings", "-n", deletableNs,
+							"-l", "foldertree.rbac.kubevirt.io/tree=deleted-ns-test")
+						output, err := utils.Run(cmd)
+						g.Expect(err).NotTo(HaveOccurred())
+						g.Expect(output).To(ContainSubstring("test-role"))
+					}).Should(Succeed())
+
+					By("deleting the namespace")
+					cmd = exec.Command("kubectl", "delete", "namespace", deletableNs)
+					_, err = utils.Run(cmd)
+					Expect(err).NotTo(HaveOccurred(), "Failed to delete namespace")
+
+					By("waiting for namespace to be fully deleted")
+					// Check that kubectl get returns error and doesn't show "Terminating"
+					Eventually(func(g Gomega) {
+						cmd := exec.Command("kubectl", "get", "namespace", deletableNs, "-o", "json")
+						output, err := utils.Run(cmd)
+						// Namespace truly gone: kubectl returns error
+						g.Expect(err).To(HaveOccurred(), "namespace should be gone")
+						// And output should not show terminating state
+						g.Expect(output).To(ContainSubstring(fmt.Sprintf("namespaces \"%s\" not found", deletableNs)))
+					}, 15*time.Second, 500*time.Millisecond).Should(Succeed())
+
+					By("updating FolderTree after namespace deletion")
+					updatedYAML := fmt.Sprintf(`
+apiVersion: rbac.kubevirt.io/v1alpha1
+kind: FolderTree
+metadata:
+  name: deleted-ns-test
+spec:
+  folders:
+  - name: test-folder
+    roleBindingTemplates:
+    - name: test-role
+      subjects:
+      - kind: Group
+        name: test-group
+        apiGroup: rbac.authorization.k8s.io
+      roleRef:
+        kind: ClusterRole
+        name: view
+        apiGroup: rbac.authorization.k8s.io
+    - name: additional-role
+      subjects:
+      - kind: Group
+        name: additional-group
+        apiGroup: rbac.authorization.k8s.io
+      roleRef:
+        kind: ClusterRole
+        name: view
+        apiGroup: rbac.authorization.k8s.io
+    namespaces: ["%s"]
+`, deletableNs)
+
+					cmd = exec.Command("kubectl", "apply", "-f", "-")
+					cmd.Stdin = strings.NewReader(updatedYAML)
+					_, err = utils.Run(cmd)
+					Expect(err).NotTo(HaveOccurred(), "Should allow update even though namespace is deleted")
+
+					By("cleaning up")
+					utils.Run(exec.Command("kubectl", "delete", "foldertree", "deleted-ns-test", "--ignore-not-found"))
+				})
+			})
+
 			Context("Dynamic Updates", func() {
 				It("should handle FolderTree updates and RoleBinding changes", func() {
 					By("creating initial FolderTree")

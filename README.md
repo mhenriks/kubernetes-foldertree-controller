@@ -131,6 +131,9 @@ No polling. Responds immediately to changes with intelligent diff analysis - onl
 ### 📊 **Production Ready**
 Status reporting, health checks, metrics, automatic cleanup, and TLS webhooks. Built for enterprise environments.
 
+### 🔧 **Namespace Lifecycle Aware**
+Intelligently handles namespace deletion. Existing namespaces can be deleted without breaking FolderTrees. New namespaces must exist to prevent configuration errors.
+
 ## Installation
 
 ### Development (Local)

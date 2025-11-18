@@ -105,6 +105,47 @@ root (admin: propagate=true)
 3. **Inheritance Processing**: Calculates effective permissions for each namespace
 4. **Reconciliation**: Creates/updates/deletes RoleBindings to match desired state
 
+### Namespace Handling
+
+The controller has intelligent handling for namespace lifecycle events:
+
+#### Deleted Namespaces
+
+**Controller Behavior:**
+- If a namespace referenced in a FolderTree is deleted, the controller **silently skips** creating RoleBindings in that namespace
+- When the namespace is recreated, the controller automatically creates the appropriate RoleBindings
+- RoleBindings are automatically cleaned up by Kubernetes garbage collection when namespaces are deleted
+
+**Webhook Validation:**
+- **New namespaces** (added to FolderTree): **MUST exist** - validation fails if namespace doesn't exist
+- **Existing namespaces** (already in FolderTree): **Can be deleted** - validation succeeds even if namespace was deleted
+- This allows FolderTrees to be updated or deleted even when some namespaces have been removed
+
+**Example Workflow:**
+```bash
+# 1. Create FolderTree with namespace "prod-web"
+kubectl apply -f foldertree.yaml
+
+# 2. Delete the namespace
+kubectl delete namespace prod-web
+
+# 3. Update the FolderTree (e.g., add new permissions)
+kubectl apply -f foldertree.yaml  # ✅ Succeeds - "prod-web" was already in tree
+
+# 4. Delete the FolderTree
+kubectl delete foldertree my-tree  # ✅ Succeeds - validates only existing namespaces
+
+# 5. Try to add a NEW non-existent namespace
+# Edit foldertree.yaml to add "new-namespace" that doesn't exist
+kubectl apply -f foldertree.yaml  # ❌ Fails - new namespaces must exist
+```
+
+**Why This Design?**
+- **Operational Flexibility**: Allows namespace lifecycle management independent of FolderTrees
+- **No Lock-in**: Can delete FolderTrees even when namespaces are already gone
+- **Safety**: Prevents accidentally referencing non-existent namespaces when adding new ones
+- **Event-Driven Recovery**: Automatically reconciles when namespaces are recreated
+
 ### Admission Webhook
 
 - **Validation**: Comprehensive business logic and security checks
@@ -706,6 +747,53 @@ kubectl create clusterrolebinding my-admin --clusterrole=cluster-admin --user=$(
 # 4. DNS-1123 naming
 # Error: "name must be a valid DNS-1123 label"
 # Fix: Use lowercase alphanumeric characters and hyphens only
+
+# 5. Non-existent namespace (NEW in this update)
+# Error: "namespace 'my-ns' does not exist - cannot add non-existent namespace"
+# Fix: This only happens when ADDING a new namespace. Create it first:
+kubectl create namespace my-ns
+kubectl apply -f foldertree.yaml  # Now it works
+
+# NOTE: Existing namespaces CAN be deleted - updates will still work
+```
+
+**Namespace-related issues**
+```bash
+# Problem: "namespace does not exist" error when creating/updating FolderTree
+# This is expected behavior - NEW namespaces must exist before adding to FolderTree
+
+# Solution: Create the namespace first
+kubectl create namespace <new-namespace>
+kubectl apply -f foldertree.yaml
+
+# Problem: Cannot delete FolderTree after namespace was deleted
+# This should NOT happen with current controller - it handles deleted namespaces gracefully
+
+# Problem: RoleBindings not appearing in newly created namespace
+# The controller watches for namespace creation events - should appear within seconds
+
+# Verify namespace was created
+kubectl get namespace <namespace-name>
+
+# Manually trigger reconciliation
+kubectl annotate foldertree <name> reconcile="$(date +%s)"
+
+# Check controller logs
+kubectl logs -f -n foldertree-system deployment/foldertree-controller-manager | grep "namespace"
+
+# Problem: Want to update FolderTree after namespace was deleted
+# This is SUPPORTED - existing namespaces can be deleted
+
+# The controller will skip creating RoleBindings in deleted namespaces
+kubectl apply -f foldertree.yaml  # Works fine
+
+# Check logs - should show "Skipping validation for non-existent namespace"
+kubectl logs -n foldertree-system deployment/foldertree-controller-manager | grep "Skipping"
+
+# When namespace is recreated, RoleBindings automatically appear
+kubectl create namespace <namespace-name>
+# Wait a few seconds, then check:
+kubectl get rolebindings -n <namespace-name>
 ```
 
 ### Debug Commands
