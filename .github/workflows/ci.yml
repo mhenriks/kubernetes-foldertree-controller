@@ -30,10 +30,9 @@ jobs:
             ${{ runner.os }}-go-
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: v1.61.0
-          args: --timeout=5m
+        run: |
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.62.2
+          golangci-lint run --timeout=5m
 
   build:
     name: Build
