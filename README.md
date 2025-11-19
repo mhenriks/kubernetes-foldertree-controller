@@ -6,6 +6,7 @@
 [![E2E Tests](https://github.com/mhenriks/kubernetes-foldertree-controller/workflows/E2E%20Tests/badge.svg)](https://github.com/mhenriks/kubernetes-foldertree-controller/actions)
 [![Go Report Card](https://goreportcard.com/badge/github.com/mhenriks/kubernetes-foldertree-controller)](https://goreportcard.com/report/github.com/mhenriks/kubernetes-foldertree-controller)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Container](https://img.shields.io/badge/ghcr.io-foldertree--controller-blue)](https://github.com/mhenriks/kubernetes-foldertree-controller/pkgs/container/foldertree-controller)
 
 Managing Kubernetes RBAC at scale is painful. The FolderTree Controller solves this by organizing namespaces into tree structures with automatic permission inheritance - turning complex RBAC sprawl into simple, maintainable hierarchies.
 
@@ -136,6 +137,26 @@ Intelligently handles namespace deletion. Existing namespaces can be deleted wit
 
 ## Installation
 
+### Quick Install (Recommended)
+Install the latest stable release directly from GitHub:
+```bash
+kubectl apply -f https://github.com/mhenriks/kubernetes-foldertree-controller/releases/latest/download/install.yaml
+```
+
+Or install a specific version:
+```bash
+VERSION=v0.1.0
+kubectl apply -f https://github.com/mhenriks/kubernetes-foldertree-controller/releases/download/${VERSION}/install.yaml
+```
+
+The installation includes:
+- ✅ Custom Resource Definitions (CRDs)
+- ✅ Controller deployment with webhooks
+- ✅ RBAC permissions
+- ✅ TLS certificates (via cert-manager)
+
+**Container Images**: Multi-platform images available at `ghcr.io/mhenriks/foldertree-controller`
+
 ### Development (Local)
 ```bash
 git clone https://github.com/mhenriks/kubernetes-foldertree-controller
@@ -143,12 +164,16 @@ cd kubernetes-foldertree-controller
 make install && ENABLE_WEBHOOKS=false make run
 ```
 
-### Production (Cluster)
+### Production (From Source)
 ```bash
+git clone https://github.com/mhenriks/kubernetes-foldertree-controller
+cd kubernetes-foldertree-controller
 make deploy  # Includes CRDs, controller, webhooks, and RBAC
 ```
 
 **Need help?** See the **[Quick Start Guide](QUICKSTART.md)** for detailed installation steps.
+
+**Creating releases?** See the **[Release Guide](RELEASE.md)** for maintainers.
 
 ## Why Teams Choose FolderTree
 
