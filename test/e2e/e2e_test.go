@@ -66,7 +66,8 @@ roleRef:
 	return err
 }
 
-// createSufficientUserRBAC creates RBAC for a user with both FolderTree and RoleBinding permissions, plus view permissions
+// createSufficientUserRBAC creates RBAC for a user with both FolderTree and
+// RoleBinding permissions, plus view permissions
 func createSufficientUserRBAC(userName, clusterRoleName, clusterRoleBindingName string) error {
 	rbacYAML := fmt.Sprintf(`
 apiVersion: rbac.authorization.k8s.io/v1
@@ -116,11 +117,14 @@ roleRef:
 
 // cleanupUserRBAC cleans up RBAC resources for a test user
 func cleanupUserRBAC(clusterRoleName, clusterRoleBindingName string, hasViewBinding bool) {
-	utils.Run(exec.Command("kubectl", "delete", "clusterrole", clusterRoleName, "--ignore-not-found"))
-	utils.Run(exec.Command("kubectl", "delete", "clusterrolebinding", clusterRoleBindingName, "--ignore-not-found"))
+	_, _ = utils.Run(exec.Command("kubectl", "delete", "clusterrole", clusterRoleName, "--ignore-not-found"))
+	_, _ = utils.Run(exec.Command("kubectl", "delete", "clusterrolebinding",
+		clusterRoleBindingName, "--ignore-not-found"))
 	if hasViewBinding {
-		utils.Run(exec.Command("kubectl", "delete", "clusterrolebinding", fmt.Sprintf("%s-foldertree", clusterRoleBindingName), "--ignore-not-found"))
-		utils.Run(exec.Command("kubectl", "delete", "clusterrolebinding", fmt.Sprintf("%s-view", clusterRoleBindingName), "--ignore-not-found"))
+		_, _ = utils.Run(exec.Command("kubectl", "delete", "clusterrolebinding",
+			fmt.Sprintf("%s-foldertree", clusterRoleBindingName), "--ignore-not-found"))
+		_, _ = utils.Run(exec.Command("kubectl", "delete", "clusterrolebinding",
+			fmt.Sprintf("%s-view", clusterRoleBindingName), "--ignore-not-found"))
 	}
 }
 
@@ -434,15 +438,15 @@ var _ = Describe("Manager", Ordered, func() {
 			AfterAll(func() {
 				By("cleaning up test namespaces and FolderTrees")
 				// Delete test FolderTrees
-				utils.Run(exec.Command("kubectl", "delete", "foldertree", "--all", "--ignore-not-found"))
+				_, _ = utils.Run(exec.Command("kubectl", "delete", "foldertree", "--all", "--ignore-not-found"))
 
 				// Delete test namespaces
 				for _, ns := range testNamespaces {
-					utils.Run(exec.Command("kubectl", "delete", "namespace", ns, "--ignore-not-found"))
+					_, _ = utils.Run(exec.Command("kubectl", "delete", "namespace", ns, "--ignore-not-found"))
 				}
 
 				// Clean up test ClusterRoleBinding
-				utils.Run(exec.Command("kubectl", "delete", "clusterrolebinding", "e2e-test-admin", "--ignore-not-found"))
+				_, _ = utils.Run(exec.Command("kubectl", "delete", "clusterrolebinding", "e2e-test-admin", "--ignore-not-found"))
 			})
 
 			Context("Basic FolderTree Operations", func() {
@@ -554,7 +558,8 @@ spec:
 					By("verifying RoleBindings were created with proper inheritance")
 					// ft-test-prod-web should get: platform-admin + prod-ops + web-developers
 					Eventually(func(g Gomega) {
-						cmd := exec.Command("kubectl", "get", "rolebindings", "-n", "ft-test-prod-web", "-o", "jsonpath={.items[*].metadata.name}")
+						cmd := exec.Command("kubectl", "get", "rolebindings", "-n", "ft-test-prod-web",
+							"-o", "jsonpath={.items[*].metadata.name}")
 						output, err := utils.Run(cmd)
 						g.Expect(err).NotTo(HaveOccurred())
 						g.Expect(output).To(ContainSubstring("platform-admin"))
@@ -564,7 +569,8 @@ spec:
 
 					// ft-test-prod-api should get: platform-admin + prod-ops (no web-developers)
 					Eventually(func(g Gomega) {
-						cmd := exec.Command("kubectl", "get", "rolebindings", "-n", "ft-test-prod-api", "-o", "jsonpath={.items[*].metadata.name}")
+						cmd := exec.Command("kubectl", "get", "rolebindings", "-n", "ft-test-prod-api",
+							"-o", "jsonpath={.items[*].metadata.name}")
 						output, err := utils.Run(cmd)
 						g.Expect(err).NotTo(HaveOccurred())
 						g.Expect(output).To(ContainSubstring("platform-admin"))
@@ -574,7 +580,8 @@ spec:
 
 					By("verifying RoleBinding content is correct")
 					Eventually(func(g Gomega) {
-						cmd := exec.Command("kubectl", "get", "rolebinding", "-n", "ft-test-prod-web", "-l", "foldertree.rbac.kubevirt.io/tree=basic-test", "-o", "yaml")
+						cmd := exec.Command("kubectl", "get", "rolebinding", "-n", "ft-test-prod-web",
+							"-l", "foldertree.rbac.kubevirt.io/tree=basic-test", "-o", "yaml")
 						output, err := utils.Run(cmd)
 						g.Expect(err).NotTo(HaveOccurred())
 						g.Expect(output).To(ContainSubstring("platform-team"))
@@ -587,7 +594,7 @@ spec:
 
 				AfterEach(func() {
 					// Clean up FolderTrees after each test to prevent naming conflicts
-					utils.Run(exec.Command("kubectl", "delete", "foldertree", "--all", "--ignore-not-found"))
+					_, _ = utils.Run(exec.Command("kubectl", "delete", "foldertree", "--all", "--ignore-not-found"))
 					time.Sleep(1 * time.Second) // Wait for cleanup
 				})
 
@@ -637,7 +644,8 @@ spec:
 
 					By("verifying propagated permissions exist")
 					Eventually(func(g Gomega) {
-						cmd := exec.Command("kubectl", "get", "rolebindings", "-n", "ft-test-staging", "-o", "jsonpath={.items[*].metadata.name}")
+						cmd := exec.Command("kubectl", "get", "rolebindings", "-n", "ft-test-staging",
+							"-o", "jsonpath={.items[*].metadata.name}")
 						output, err := utils.Run(cmd)
 						g.Expect(err).NotTo(HaveOccurred())
 						g.Expect(output).To(ContainSubstring("global-admin"))
@@ -645,7 +653,8 @@ spec:
 
 					By("verifying non-propagated permissions do NOT exist")
 					Consistently(func(g Gomega) {
-						cmd := exec.Command("kubectl", "get", "rolebindings", "-n", "ft-test-staging", "-o", "jsonpath={.items[*].metadata.name}")
+						cmd := exec.Command("kubectl", "get", "rolebindings", "-n", "ft-test-staging",
+							"-o", "jsonpath={.items[*].metadata.name}")
 						output, err := utils.Run(cmd)
 						g.Expect(err).NotTo(HaveOccurred())
 						g.Expect(output).NotTo(ContainSubstring("secrets-access"))
@@ -696,7 +705,8 @@ spec:
 
 					By("verifying standalone folder RoleBindings were created")
 					Eventually(func(g Gomega) {
-						cmd := exec.Command("kubectl", "get", "rolebindings", "-n", "ft-test-sandbox", "-o", "jsonpath={.items[*].metadata.name}")
+						cmd := exec.Command("kubectl", "get", "rolebindings", "-n", "ft-test-sandbox",
+							"-o", "jsonpath={.items[*].metadata.name}")
 						output, err := utils.Run(cmd)
 						g.Expect(err).NotTo(HaveOccurred())
 						g.Expect(output).To(ContainSubstring("sandbox-users"))
@@ -857,12 +867,13 @@ spec:
 `, folderTreeName, userName)
 
 					// Use kubectl --as to impersonate the limited user
-					cmd := exec.Command("kubectl", "apply", "-f", "-", fmt.Sprintf("--as=%s", userName), "--as-group=system:authenticated")
+					cmd := exec.Command("kubectl", "apply", "-f", "-",
+						fmt.Sprintf("--as=%s", userName), "--as-group=system:authenticated")
 					cmd.Stdin = strings.NewReader(escalationYAML)
 					expectPrivilegeEscalationError(cmd, "Should have prevented privilege escalation")
 
 					By("cleaning up test resources")
-					utils.Run(exec.Command("kubectl", "delete", "foldertree", folderTreeName, "--ignore-not-found"))
+					_, _ = utils.Run(exec.Command("kubectl", "delete", "foldertree", folderTreeName, "--ignore-not-found"))
 					cleanupUserRBAC(clusterRoleName, clusterRoleBindingName, false)
 				})
 
@@ -898,12 +909,13 @@ spec:
     namespaces: ["ft-test-sandbox"]
 `, folderTreeName, userName)
 
-					cmd := exec.Command("kubectl", "apply", "-f", "-", fmt.Sprintf("--as=%s", userName), "--as-group=system:authenticated")
+					cmd := exec.Command("kubectl", "apply", "-f", "-",
+						fmt.Sprintf("--as=%s", userName), "--as-group=system:authenticated")
 					cmd.Stdin = strings.NewReader(noRoleBindingYAML)
 					expectPrivilegeEscalationError(cmd, "Should have prevented creation due to lack of RoleBinding permissions")
 
 					By("cleaning up test resources")
-					utils.Run(exec.Command("kubectl", "delete", "foldertree", folderTreeName, "--ignore-not-found"))
+					_, _ = utils.Run(exec.Command("kubectl", "delete", "foldertree", folderTreeName, "--ignore-not-found"))
 					cleanupUserRBAC(clusterRoleName, clusterRoleBindingName, false)
 				})
 
@@ -939,7 +951,8 @@ spec:
     namespaces: ["ft-test-sandbox"]
 `, folderTreeName, userName)
 
-					cmd := exec.Command("kubectl", "apply", "-f", "-", fmt.Sprintf("--as=%s", userName), "--as-group=system:authenticated")
+					cmd := exec.Command("kubectl", "apply", "-f", "-",
+						fmt.Sprintf("--as=%s", userName), "--as-group=system:authenticated")
 					cmd.Stdin = strings.NewReader(validYAML)
 					_, err = utils.Run(cmd)
 					Expect(err).NotTo(HaveOccurred(), "Should allow FolderTree creation with sufficient permissions")
@@ -953,7 +966,7 @@ spec:
 					}).Should(Succeed())
 
 					By("cleaning up test resources")
-					utils.Run(exec.Command("kubectl", "delete", "foldertree", folderTreeName, "--ignore-not-found"))
+					_, _ = utils.Run(exec.Command("kubectl", "delete", "foldertree", folderTreeName, "--ignore-not-found"))
 					cleanupUserRBAC(clusterRoleName, clusterRoleBindingName, true)
 				})
 
@@ -1025,12 +1038,13 @@ spec:
     namespaces: ["ft-test-staging"]
 `, folderTreeName, userName, userName)
 
-					cmd = exec.Command("kubectl", "apply", "-f", "-", fmt.Sprintf("--as=%s", userName), "--as-group=system:authenticated")
+					cmd = exec.Command("kubectl", "apply", "-f", "-",
+						fmt.Sprintf("--as=%s", userName), "--as-group=system:authenticated")
 					cmd.Stdin = strings.NewReader(updateYAML)
 					expectPrivilegeEscalationError(cmd, "Should have prevented update due to privilege escalation")
 
 					By("cleaning up test resources")
-					utils.Run(exec.Command("kubectl", "delete", "foldertree", folderTreeName, "--ignore-not-found"))
+					_, _ = utils.Run(exec.Command("kubectl", "delete", "foldertree", folderTreeName, "--ignore-not-found"))
 					cleanupUserRBAC(clusterRoleName, clusterRoleBindingName, false)
 				})
 
@@ -1073,7 +1087,8 @@ spec:
 
 					By("verifying admin RoleBinding was created")
 					Eventually(func(g Gomega) {
-						cmd := exec.Command("kubectl", "get", "rolebindings", "-n", "ft-test-staging", "-l", fmt.Sprintf("foldertree.rbac.kubevirt.io/tree=%s", folderTreeName))
+						cmd := exec.Command("kubectl", "get", "rolebindings", "-n", "ft-test-staging",
+							"-l", fmt.Sprintf("foldertree.rbac.kubevirt.io/tree=%s", folderTreeName))
 						output, err := utils.Run(cmd)
 						g.Expect(err).NotTo(HaveOccurred())
 						g.Expect(output).To(ContainSubstring("admin-access"))
@@ -1081,11 +1096,12 @@ spec:
 
 					By("attempting to delete FolderTree as limited user")
 					// Limited user doesn't have permission to delete RoleBindings with admin permissions
-					cmd = exec.Command("kubectl", "delete", "foldertree", folderTreeName, fmt.Sprintf("--as=%s", userName), "--as-group=system:authenticated")
+					cmd = exec.Command("kubectl", "delete", "foldertree", folderTreeName,
+						fmt.Sprintf("--as=%s", userName), "--as-group=system:authenticated")
 					expectPrivilegeEscalationError(cmd, "Should have prevented deletion due to insufficient permissions")
 
 					By("cleaning up test resources")
-					utils.Run(exec.Command("kubectl", "delete", "foldertree", folderTreeName, "--ignore-not-found"))
+					_, _ = utils.Run(exec.Command("kubectl", "delete", "foldertree", folderTreeName, "--ignore-not-found"))
 					cleanupUserRBAC(clusterRoleName, clusterRoleBindingName, false)
 				})
 			})
@@ -1163,7 +1179,7 @@ spec:
 					}).Should(Succeed())
 
 					By("cleaning up")
-					utils.Run(exec.Command("kubectl", "delete", "foldertree", "existing-ns-test", "--ignore-not-found"))
+					_, _ = utils.Run(exec.Command("kubectl", "delete", "foldertree", "existing-ns-test", "--ignore-not-found"))
 				})
 
 				It("should reject adding NEW non-existent namespace to existing FolderTree", func() {
@@ -1226,7 +1242,7 @@ spec:
 					))
 
 					By("cleaning up")
-					utils.Run(exec.Command("kubectl", "delete", "foldertree", "add-ns-test", "--ignore-not-found"))
+					_, _ = utils.Run(exec.Command("kubectl", "delete", "foldertree", "add-ns-test", "--ignore-not-found"))
 				})
 
 				It("should allow update when namespace was deleted", func() {
@@ -1325,7 +1341,7 @@ spec:
 					Expect(err).NotTo(HaveOccurred(), "Should allow update even though namespace is deleted")
 
 					By("cleaning up")
-					utils.Run(exec.Command("kubectl", "delete", "foldertree", "deleted-ns-test", "--ignore-not-found"))
+					_, _ = utils.Run(exec.Command("kubectl", "delete", "foldertree", "deleted-ns-test", "--ignore-not-found"))
 				})
 			})
 
@@ -1445,7 +1461,8 @@ spec:
 
 					By("verifying RoleBinding was created")
 					Eventually(func(g Gomega) {
-						cmd := exec.Command("kubectl", "get", "rolebindings", "-n", "ft-test-sandbox", "-l", "foldertree.rbac.kubevirt.io/tree=delete-test")
+						cmd := exec.Command("kubectl", "get", "rolebindings", "-n", "ft-test-sandbox",
+							"-l", "foldertree.rbac.kubevirt.io/tree=delete-test")
 						output, err := utils.Run(cmd)
 						g.Expect(err).NotTo(HaveOccurred())
 						g.Expect(output).To(ContainSubstring("temp-role"))
@@ -1458,7 +1475,8 @@ spec:
 
 					By("verifying RoleBindings were cleaned up")
 					Eventually(func(g Gomega) {
-						cmd := exec.Command("kubectl", "get", "rolebindings", "-n", "ft-test-sandbox", "-l", "foldertree.rbac.kubevirt.io/tree=delete-test")
+						cmd := exec.Command("kubectl", "get", "rolebindings", "-n", "ft-test-sandbox",
+							"-l", "foldertree.rbac.kubevirt.io/tree=delete-test")
 						output, err := utils.Run(cmd)
 						g.Expect(err).NotTo(HaveOccurred())
 						g.Expect(output).NotTo(ContainSubstring("temp-role"))

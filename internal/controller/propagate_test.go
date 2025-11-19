@@ -32,6 +32,8 @@ import (
 	rbacv1alpha1 "kubevirt.io/folders/api/v1alpha1"
 )
 
+const managedByLabelValue = "foldertree-controller"
+
 var _ = Describe("FolderTree Controller - Propagate Field", func() {
 	var (
 		ctx        context.Context
@@ -142,7 +144,7 @@ var _ = Describe("FolderTree Controller - Propagate Field", func() {
 
 			parentFolderTreeRBs := []rbacv1.RoleBinding{}
 			for _, rb := range parentRoleBindings.Items {
-				if managedBy, exists := rb.Labels["app.kubernetes.io/managed-by"]; exists && managedBy == "foldertree-controller" {
+				if managedBy, exists := rb.Labels["app.kubernetes.io/managed-by"]; exists && managedBy == managedByLabelValue {
 					parentFolderTreeRBs = append(parentFolderTreeRBs, rb)
 				}
 			}
@@ -156,7 +158,7 @@ var _ = Describe("FolderTree Controller - Propagate Field", func() {
 
 			childFolderTreeRBs := []rbacv1.RoleBinding{}
 			for _, rb := range childRoleBindings.Items {
-				if managedBy, exists := rb.Labels["app.kubernetes.io/managed-by"]; exists && managedBy == "foldertree-controller" {
+				if managedBy, exists := rb.Labels["app.kubernetes.io/managed-by"]; exists && managedBy == managedByLabelValue {
 					childFolderTreeRBs = append(childFolderTreeRBs, rb)
 				}
 			}
@@ -292,7 +294,7 @@ var _ = Describe("FolderTree Controller - Propagate Field", func() {
 
 			parentFTRBs := []rbacv1.RoleBinding{}
 			for _, rb := range parentRBs.Items {
-				if managedBy, exists := rb.Labels["app.kubernetes.io/managed-by"]; exists && managedBy == "foldertree-controller" {
+				if managedBy, exists := rb.Labels["app.kubernetes.io/managed-by"]; exists && managedBy == managedByLabelValue {
 					parentFTRBs = append(parentFTRBs, rb)
 				}
 			}
@@ -306,7 +308,7 @@ var _ = Describe("FolderTree Controller - Propagate Field", func() {
 			childFTRBs := []rbacv1.RoleBinding{}
 			childRBNames := make(map[string]bool)
 			for _, rb := range childRBs.Items {
-				if managedBy, exists := rb.Labels["app.kubernetes.io/managed-by"]; exists && managedBy == "foldertree-controller" {
+				if managedBy, exists := rb.Labels["app.kubernetes.io/managed-by"]; exists && managedBy == managedByLabelValue {
 					childFTRBs = append(childFTRBs, rb)
 					childRBNames[rb.Name] = true
 				}
@@ -398,7 +400,7 @@ var _ = Describe("FolderTree Controller - Propagate Field", func() {
 
 			parentFTRBs := []rbacv1.RoleBinding{}
 			for _, rb := range parentRBs.Items {
-				if managedBy, exists := rb.Labels["app.kubernetes.io/managed-by"]; exists && managedBy == "foldertree-controller" {
+				if managedBy, exists := rb.Labels["app.kubernetes.io/managed-by"]; exists && managedBy == managedByLabelValue {
 					parentFTRBs = append(parentFTRBs, rb)
 				}
 			}
@@ -411,11 +413,11 @@ var _ = Describe("FolderTree Controller - Propagate Field", func() {
 
 			childFTRBs := []rbacv1.RoleBinding{}
 			for _, rb := range childRBs.Items {
-				if managedBy, exists := rb.Labels["app.kubernetes.io/managed-by"]; exists && managedBy == "foldertree-controller" {
+				if managedBy, exists := rb.Labels["app.kubernetes.io/managed-by"]; exists && managedBy == managedByLabelValue {
 					childFTRBs = append(childFTRBs, rb)
 				}
 			}
-			Expect(childFTRBs).To(HaveLen(0), "Child should have NO RoleBindings (secure by default)")
+			Expect(childFTRBs).To(BeEmpty(), "Child should have NO RoleBindings (secure by default)")
 
 			// Clean up
 			Expect(k8sClient.Delete(ctx, folderTree)).To(Succeed())

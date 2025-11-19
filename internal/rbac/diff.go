@@ -73,9 +73,9 @@ type DiffAnalyzer struct {
 }
 
 // NewDiffAnalyzer creates a new DiffAnalyzer instance
-func NewDiffAnalyzer(client client.Client, folderTree *rbacv1alpha1.FolderTree, builder *RoleBindingBuilder) *DiffAnalyzer {
+func NewDiffAnalyzer(k8sClient client.Client, folderTree *rbacv1alpha1.FolderTree, builder *RoleBindingBuilder) *DiffAnalyzer {
 	return &DiffAnalyzer{
-		Client:     client,
+		Client:     k8sClient,
 		FolderTree: folderTree,
 		Builder:    builder,
 	}

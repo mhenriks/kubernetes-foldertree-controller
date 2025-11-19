@@ -479,7 +479,7 @@ var _ = Describe("WebhookDiffAnalyzer", func() {
 
 			operations, err := analyzer.AnalyzeFolderTreeDiff()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(operations).To(HaveLen(0)) // No changes = no operations
+			Expect(operations).To(BeEmpty()) // No changes = no operations
 		})
 	})
 })

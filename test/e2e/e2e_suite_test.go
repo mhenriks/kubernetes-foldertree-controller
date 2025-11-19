@@ -84,7 +84,8 @@ var _ = BeforeSuite(func() {
 var _ = AfterSuite(func() {
 	// Clean up test resources
 	By("cleaning up test ClusterRoleBindings")
-	utils.Run(exec.Command("kubectl", "delete", "clusterrolebinding", "foldertree-metrics-binding", "--ignore-not-found"))
+	_, _ = utils.Run(exec.Command("kubectl", "delete", "clusterrolebinding",
+		"foldertree-metrics-binding", "--ignore-not-found"))
 
 	// Teardown CertManager after the suite if not skipped and if it was not already installed
 	if !skipCertManagerInstall && !isCertManagerAlreadyInstalled {

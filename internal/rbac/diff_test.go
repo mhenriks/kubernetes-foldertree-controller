@@ -160,7 +160,7 @@ var _ = Describe("DiffAnalyzer", func() {
 
 			operations, err := diffAnalyzer.AnalyzeDiff(ctx)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(operations).To(HaveLen(0)) // No operations needed
+			Expect(operations).To(BeEmpty()) // No operations needed
 		})
 	})
 
@@ -459,7 +459,7 @@ var _ = Describe("DiffAnalyzer", func() {
 
 			operations, err := diffAnalyzer.AnalyzeDiff(ctx)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(operations).To(HaveLen(0)) // Should NOT inherit the parent template (default is false)
+			Expect(operations).To(BeEmpty()) // Should NOT inherit the parent template (default is false)
 
 			// No operations should be created since propagate defaults to false
 		})

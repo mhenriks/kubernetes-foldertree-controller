@@ -214,6 +214,8 @@ func (v *FolderTreeCustomValidator) validateNewStructure(ctx context.Context, fo
 }
 
 // validateTreeNode validates a single tree node structure
+//
+//nolint:unparam
 func (v *FolderTreeCustomValidator) validateTreeNode(ctx context.Context, treeNode rbacv1alpha1.TreeNode, fldPath *field.Path) error {
 	var allErrors field.ErrorList
 
@@ -279,7 +281,7 @@ func (v *FolderTreeCustomValidator) validateFolder(ctx context.Context, folder r
 }
 
 // validateRoleBindingTemplate validates a single role binding template structure
-func (v *FolderTreeCustomValidator) validateRoleBindingTemplate(ctx context.Context, roleBindingTemplate rbacv1alpha1.RoleBindingTemplate, fldPath *field.Path) error {
+func (v *FolderTreeCustomValidator) validateRoleBindingTemplate(_ context.Context, roleBindingTemplate rbacv1alpha1.RoleBindingTemplate, fldPath *field.Path) error {
 	var allErrors field.ErrorList
 
 	// Validate name
@@ -345,7 +347,7 @@ func isValidKubernetesName(name string) bool {
 }
 
 // validateBusinessLogic performs additional business logic validation
-func (v *FolderTreeCustomValidator) validateBusinessLogic(ctx context.Context, folderTree *rbacv1alpha1.FolderTree) error {
+func (v *FolderTreeCustomValidator) validateBusinessLogic(_ context.Context, folderTree *rbacv1alpha1.FolderTree) error {
 	var allErrors field.ErrorList
 
 	// Validate that at least one namespace is assigned somewhere
@@ -417,14 +419,10 @@ func (v *FolderTreeCustomValidator) validateBusinessLogic(ctx context.Context, f
 	}
 
 	// Validate role binding template names don't conflict in inheritance chains
-	if err := v.validateInheritanceConflicts(folderTree, &allErrors); err != nil {
-		allErrors = append(allErrors, field.InternalError(field.NewPath("spec"), err))
-	}
+	v.validateInheritanceConflicts(folderTree, &allErrors)
 
 	// Validate that all tree nodes reference declared folders and all folders are used
-	if err := v.validateFolderReferences(folderTree, &allErrors); err != nil {
-		allErrors = append(allErrors, field.InternalError(field.NewPath("spec"), err))
-	}
+	v.validateFolderReferences(folderTree, &allErrors)
 
 	// Validate reasonable limits
 	totalFolders := len(folderTree.Spec.Folders)
@@ -510,7 +508,7 @@ func (v *FolderTreeCustomValidator) validateUniqueTreeNodeNames(treeNode rbacv1a
 // validateInheritanceConflicts validates that role binding template names don't conflict
 // in inheritance chains. This prevents the issue where a child folder's template
 // overwrites a parent folder's template with the same name.
-func (v *FolderTreeCustomValidator) validateInheritanceConflicts(folderTree *rbacv1alpha1.FolderTree, allErrors *field.ErrorList) error {
+func (v *FolderTreeCustomValidator) validateInheritanceConflicts(folderTree *rbacv1alpha1.FolderTree, allErrors *field.ErrorList) {
 	// Create a map of folder name to folder data for quick lookup
 	folderMap := make(map[string]rbacv1alpha1.Folder)
 	folderIndexMap := make(map[string]int) // Track folder indices for error reporting
@@ -524,11 +522,11 @@ func (v *FolderTreeCustomValidator) validateInheritanceConflicts(folderTree *rba
 		treePath := field.NewPath("spec", "tree")
 		v.validateTreeInheritanceConflicts(*folderTree.Spec.Tree, treePath, folderMap, folderIndexMap, []string{}, allErrors)
 	}
-
-	return nil
 }
 
 // validateTreeInheritanceConflicts recursively validates inheritance conflicts in a tree structure
+//
+//nolint:unparam
 func (v *FolderTreeCustomValidator) validateTreeInheritanceConflicts(
 	treeNode rbacv1alpha1.TreeNode,
 	treePath *field.Path,
@@ -579,7 +577,7 @@ func (v *FolderTreeCustomValidator) validateTreeInheritanceConflicts(
 
 // validateFolderReferences validates that all tree nodes reference declared folders
 // and that all declared folders are used somewhere (either in trees or as standalone)
-func (v *FolderTreeCustomValidator) validateFolderReferences(folderTree *rbacv1alpha1.FolderTree, allErrors *field.ErrorList) error {
+func (v *FolderTreeCustomValidator) validateFolderReferences(folderTree *rbacv1alpha1.FolderTree, allErrors *field.ErrorList) {
 	// Create sets for tracking
 	declaredFolders := make(map[string]int)    // folder name -> index in folders array
 	referencedFolders := make(map[string]bool) // folder names referenced in trees
@@ -641,8 +639,6 @@ func (v *FolderTreeCustomValidator) validateFolderReferences(folderTree *rbacv1a
 			}
 		}
 	}
-
-	return nil
 }
 
 // isInAnyTreeHelper is a helper function for validateFolderReferences

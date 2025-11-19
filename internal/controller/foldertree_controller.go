@@ -210,8 +210,8 @@ func (r *FolderTreeReconciler) updateStatus(ctx context.Context, folderTree *rba
 
 	folderTree.Status.ProcessedGeneration = folderTree.Generation
 
-	// Update status
-	r.Status().Update(ctx, folderTree)
+	// Update status - ignore error as status updates are best-effort
+	_ = r.Status().Update(ctx, folderTree)
 }
 
 // removeCondition removes a condition by type

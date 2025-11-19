@@ -113,7 +113,6 @@ func calculateFromTreeNode(node rbacv1alpha1.TreeNode, folderMap map[string]rbac
 		}
 	} else {
 		// Tree node exists but no folder data - only pass inherited role binding templates
-		allRoleBindingTemplates = inheritedRoleBindingTemplates
 		templatesToInherit = inheritedRoleBindingTemplates
 	}
 

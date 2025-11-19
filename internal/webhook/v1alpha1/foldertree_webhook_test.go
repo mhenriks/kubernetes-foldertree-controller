@@ -1587,7 +1587,7 @@ var _ = Describe("FolderTree Webhook", func() {
 		})
 
 		It("should reject CREATE when namespace doesn't exist", func() {
-			obj.ObjectMeta.Name = "test-nonexistent-ns"
+			obj.Name = "test-nonexistent-ns"
 			obj.Spec = rbacv1alpha1.FolderTreeSpec{
 				Folders: []rbacv1alpha1.Folder{
 					{
@@ -1726,7 +1726,7 @@ var _ = Describe("FolderTree Webhook", func() {
 
 		It("should allow DELETE when namespace was deleted", func() {
 			// Simulate FolderTree with a namespace that was deleted
-			obj.ObjectMeta.Name = "test-tree-for-deletion"
+			obj.Name = "test-tree-for-deletion"
 			obj.Spec = rbacv1alpha1.FolderTreeSpec{
 				Folders: []rbacv1alpha1.Folder{
 					{

@@ -42,8 +42,8 @@ var _ = Describe("RoleBindingBuilder", func() {
 
 	BeforeEach(func() {
 		scheme = runtime.NewScheme()
-		rbacv1alpha1.AddToScheme(scheme)
-		rbacv1.AddToScheme(scheme)
+		Expect(rbacv1alpha1.AddToScheme(scheme)).To(Succeed())
+		Expect(rbacv1.AddToScheme(scheme)).To(Succeed())
 
 		folderTree = &rbacv1alpha1.FolderTree{
 			ObjectMeta: metav1.ObjectMeta{
