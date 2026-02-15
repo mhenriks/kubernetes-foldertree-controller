@@ -1,4 +1,8 @@
-# Kubernetes FolderTree Controller
+# This project has moved to [Kubernetes Folder Controller](https://github.com/mhenriks/kubernetes-folder-controller)
+
+---
+
+# Kubernetes FolderTree Controller (Deprecated)
 
 **Transform complex RBAC management from hundreds of RoleBindings into a single, hierarchical resource.**
 
